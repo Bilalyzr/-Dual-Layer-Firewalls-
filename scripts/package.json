@@ -1,0 +1,11 @@
+{
+  "name": "dual-layer-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Operational scripts: seed + Phase-3 benchmark.",
+  "scripts": {
+    "seed": "node seed_db.js",
+    "benchmark": "node benchmark.js"
+  }
+}

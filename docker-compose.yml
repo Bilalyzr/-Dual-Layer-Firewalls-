@@ -1,0 +1,73 @@
+# =============================================================================
+# Unified Dual-Layer AI Firewall — full stack (Tier 1 MVP)
+#
+#   mongo   persistence layer (PRD §4 Database Layer)
+#   engine  Python processing layer: scikit-learn classifier + biometric scoring
+#   proxy   Node.js AI firewall proxy (intercepts prompts, batches telemetry)
+#   client  React SecOps dashboard (nginx-served, proxies /api to the proxy)
+#
+# Usage:  cp .env.example .env  &&  (fill LLM_* if you want real answers)
+#         docker compose up --build
+#         open http://localhost:5173  (or :8080)
+# =============================================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  engine:
+    build: ./engine
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      BIOMETRIC_MIN_SAMPLES: ${BIOMETRIC_MIN_SAMPLES:-120}
+      BIOMETRIC_Z_THRESHOLD: ${BIOMETRIC_Z_THRESHOLD:-2.5}
+    ports:
+      - "8000:8000"
+
+  proxy:
+    build: ./proxy
+    depends_on:
+      engine:
+        condition: service_started
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URI: mongodb://mongo:27017/firewall
+      ENGINE_URL: http://engine:8000
+      PROXY_PORT: "4000"
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      FIREWALL_MODE: ${FIREWALL_MODE:-shadow}
+      FIREWALL_THRESHOLD: ${FIREWALL_THRESHOLD:-0.65}
+      ADVERSARIAL_SAMPLE_RATE: ${ADVERSARIAL_SAMPLE_RATE:-0.05}
+      BIOMETRIC_MODE: ${BIOMETRIC_MODE:-shadow}
+      BIOMETRIC_MIN_SAMPLES: ${BIOMETRIC_MIN_SAMPLES:-120}
+      BIOMETRIC_Z_THRESHOLD: ${BIOMETRIC_Z_THRESHOLD:-2.5}
+    ports:
+      - "4000:4000"
+
+  client:
+    build:
+      context: ./client
+      args:
+        PROXY_URL: http://proxy:4000
+    depends_on:
+      - proxy
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:

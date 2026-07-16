@@ -1,0 +1,174 @@
+/**
+ * /api/chat — the core firewall interception point (Req 1.1–1.5).
+ *
+ * Pipeline:
+ *   1. Intercept inbound prompt (1.1)
+ *   2. Heuristic scan (1.2)
+ *   3. ML classification via engine (1.3)
+ *   4. Decide ALLOW/BLOCK using threshold + mode (shadow vs enforce)
+ *   5. If allowed → call LLM backend → outbound integrity check (1.4)
+ *   6. Always: log alert/confidence, sample low-confidence allowed traffic (1.5)
+ */
+import { Router } from "express";
+import { runHeuristics, OWASP_TITLES } from "../firewall/heuristics.js";
+import { classifyPrompt } from "../firewall/mlClient.js";
+import { checkOutput } from "../firewall/outputCheck.js";
+import { chatCompletion } from "../llm/client.js";
+import { insertAlert, insertSample } from "../db/mongo.js";
+import { publish } from "../middleware/eventBus.js";
+
+const router = Router();
+
+// Read mode/threshold per-request so SecOps can toggle (and tests can vary it)
+// without a process restart.
+const mode = () => (process.env.FIREWALL_MODE || "shadow").toLowerCase(); // shadow | enforce
+const threshold = () => parseFloat(process.env.FIREWALL_THRESHOLD || "0.65");
+const sampleRate = () => parseFloat(process.env.ADVERSARIAL_SAMPLE_RATE || "0.05");
+
+function mask(text, n = 200) {
+  if (typeof text !== "string") return "";
+  return text.length > n ? text.slice(0, n) + "…" : text;
+}
+
+router.post("/", async (req, res) => {
+  const t0 = performance.now();
+  const userId = req.body?.userId || "anon";
+  const prompt = req.body?.prompt || "";
+
+  // 1.1 inbound interception — reject malformed payloads
+  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+    return res.status(400).json({ error: "missing 'prompt'" });
+  }
+
+  // 1.2 + 1.3 — heuristic + ML, run in parallel
+  const [heuristic, classification] = await Promise.all([
+    runHeuristics(prompt),
+    classifyPrompt(prompt),
+  ]);
+
+  const threatProb = classification.threatProbability || 0;
+  const engineReady = classification.ready !== false;
+
+  const MODE = mode();
+  const THRESHOLD = threshold();
+  const SAMPLE_RATE = sampleRate();
+
+  // Threat if heuristics matched OR ML probability crosses threshold.
+  const heuristicThreat = heuristic.matched;
+  const mlThreat = engineReady && threatProb >= THRESHOLD;
+  const isThreat = heuristicThreat || mlThreat;
+
+  // Pick a category for the dashboard.
+  const category = heuristic.signals[0]?.category || (mlThreat ? "LLM01" : null);
+  const verdict = {
+    mode: MODE,
+    threshold: THRESHOLD,
+    heuristic: { matched: heuristicThreat, signals: heuristic.signals, latencyMs: heuristic.latencyMs },
+    classifier: { threatProbability: threatProb, latencyMs: classification.latencyMs, ready: engineReady },
+    threat: isThreat,
+    category,
+  };
+
+  // ---- Decision: shadow logs but does not block. ----
+  const willBlock = isThreat && MODE === "enforce";
+
+  if (isThreat) {
+    const label =
+      heuristic.signals[0]?.label ||
+      `ML-classified prompt injection (p=${threatProb.toFixed(2)})`;
+    const alert = {
+      userId,
+      kind: heuristicThreat ? "heuristic" : "ml",
+      category: category || "LLM01",
+      categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      label,
+      prompt: mask(prompt),
+      threatProbability: threatProb,
+      mode: MODE,
+      blocked: willBlock,
+      ts: new Date(),
+    };
+    await insertAlert(alert);
+    publish("threat", alert);
+    console.warn(`[firewall] ${MODE.toUpperCase()} ${willBlock ? "BLOCK" : "DETECT"} [${category}] ${label}`);
+  } else {
+    // 1.5 adversarial monitoring — sample low-confidence ALLOWED traffic.
+    const near = engineReady && threatProb >= THRESHOLD * 0.5 && threatProb < THRESHOLD;
+    if (near || Math.random() < SAMPLE_RATE) {
+      await insertSample({
+        userId,
+        prompt: mask(prompt),
+        threatProbability: threatProb,
+        nearThreshold: near,
+      });
+    }
+  }
+
+  if (willBlock) {
+    return res.json({
+      blocked: true,
+      reason: "blocked by AI firewall",
+      category,
+      categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      verdict,
+      latencyMs: +(performance.now() - t0).toFixed(2),
+    });
+  }
+
+  // Allowed → forward to LLM backend.
+  let llmResponse;
+  try {
+    const r = await chatCompletion(prompt);
+    llmResponse = r;
+  } catch (err) {
+    return res.status(502).json({
+      blocked: false,
+      error: "LLM backend error",
+      detail: String(err.message || err),
+      verdict,
+      latencyMs: +(performance.now() - t0).toFixed(2),
+    });
+  }
+
+  // 1.4 outbound integrity check on the response.
+  const output = checkOutput(llmResponse.content);
+  let finalContent = llmResponse.content;
+  if (output.blocked && MODE === "enforce") {
+    finalContent =
+      "[Response redacted by firewall outbound integrity check: " +
+      output.reasons.join(", ") + "]";
+    await insertAlert({
+      userId,
+      kind: "outbound",
+      category: "LLM02",
+      categoryTitle: OWASP_TITLES.LLM02,
+      label: "Outbound exfiltration/tool-call blocked",
+      reasons: output.reasons,
+      snippets: output.snippets,
+      mode: MODE,
+      blocked: true,
+      ts: new Date(),
+    });
+    publish("threat", {
+      userId,
+      kind: "outbound",
+      category: "LLM02",
+      categoryTitle: OWASP_TITLES.LLM02,
+      label: "Outbound exfiltration/tool-call blocked",
+      blocked: true,
+      ts: new Date(),
+    });
+  }
+
+  return res.json({
+    blocked: false,
+    answer: finalContent,
+    redactedOutbound: output.blocked && MODE === "enforce",
+    outboundCheck: output,
+    simulated: llmResponse.simulated || false,
+    verdict,
+    latencyMs: +(performance.now() - t0).toFixed(2),
+  });
+});
+
+export default router;

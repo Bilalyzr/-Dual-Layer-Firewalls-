@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# build output
+client/dist/
+
+# trained artifacts (large) — keep seed dataset, ignore model blobs
+engine/models/*.joblib
+
+# env (secrets — never commit)
+.env
+.env.local
+*.local
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+*.log
