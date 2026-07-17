@@ -30,6 +30,7 @@ import eventsRouter from "./routes/events.js";
 import alertsRouter from "./routes/alerts.js";
 import metricsRouter from "./routes/metrics.js";
 import inspectRouter from "./routes/inspect.js";
+import shapRouter from "./routes/shap.js";
 import { llmConfig } from "./llm/client.js";
 
 const app = express();
@@ -62,6 +63,7 @@ app.use("/api/events", eventsRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/metrics", metricsRouter);
 app.use("/api/inspect", inspectRouter);
+app.use("/api/shap", shapRouter);
 
 app.use((err, _req, res, _next) => {
   console.error("[proxy] unhandled:", err);

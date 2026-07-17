@@ -590,6 +590,47 @@ code, .mono { font-family: var(--mono); }
 }
 
 /* ==========================================================================
+   SHAP explanation block (Tier 2)
+   ========================================================================== */
+.shap-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(80, 220, 255, 0.12);
+}
+.shap-title {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 6px;
+}
+.shap-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.shap-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.shap-name {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shap-bar-wrap {
+  height: 6px;
+  background: rgba(80, 220, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.shap-bar { display: block; height: 100%; border-radius: 3px; }
+.shap-genuine .shap-bar { background: linear-gradient(90deg, rgba(0,255,157,0.2), var(--green)); box-shadow: 0 0 8px rgba(0,255,157,0.4); }
+.shap-impostor .shap-bar { background: linear-gradient(90deg, rgba(255,56,96,0.2), var(--red)); box-shadow: 0 0 8px rgba(255,56,96,0.4); }
+.shap-genuine .shap-val { color: var(--green); text-align: right; }
+.shap-impostor .shap-val { color: var(--red); text-align: right; }
+
+/* ==========================================================================
    BOOT LOADER — one-shot HUD power-on sequence
    ========================================================================== */
 .boot {

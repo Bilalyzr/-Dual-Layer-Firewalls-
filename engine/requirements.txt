@@ -7,3 +7,6 @@ pydantic==2.10.4
 numpy==2.2.1
 httpx==0.28.1
 pytest==8.3.4
+# Tier 2 (Phase 4): biometric LSTM + ensemble + SHAP
+torch==2.13.0
+shap==0.51.0

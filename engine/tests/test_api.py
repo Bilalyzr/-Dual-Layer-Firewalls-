@@ -56,20 +56,34 @@ def test_score_batch_cold_start():
 
 
 def test_score_batch_anomaly():
+    """Tier 2: an anomalous batch must score LOWER trust than a matching one.
+    The ensemble scores deviation from baseline, so we assert discrimination
+    (genuine > impostor), not an absolute threshold."""
     n = 200
-    # Realistic baseline with small natural jitter (±a few ms), not constant.
     dwell_history = [90 + ((i % 7) - 3) for i in range(n)]
     flight_history = [40 + ((i % 5) - 2) for i in range(n)]
-    r = client.post("/score-batch", json={
-        "dwell_history": dwell_history,
-        "flight_history": flight_history,
-        "prior_n": n,
-        "dwell_times": [200, 210, 205, 215, 208],
-        "flight_times": [120, 130, 125, 135, 128],
+
+    # Genuine batch: drawn from the same distribution as the baseline.
+    r_gen = client.post("/score-batch", json={
+        "dwell_history": dwell_history, "flight_history": flight_history, "prior_n": n,
+        "dwell_times": [90, 91, 89, 92, 90, 88, 91, 93],
+        "flight_times": [40, 41, 39, 42, 40, 38, 41, 43],
     })
-    body = r.json()
-    assert body["cold_start"] is False
-    assert body["trust_score"] <= 5
+    # Impostor batch: clearly different distribution (much slower).
+    r_imp = client.post("/score-batch", json={
+        "dwell_history": dwell_history, "flight_history": flight_history, "prior_n": n,
+        "dwell_times": [200, 210, 205, 215, 208, 202, 212, 207],
+        "flight_times": [160, 165, 158, 170, 163, 168, 161, 166],
+    })
+    gen = r_gen.json()
+    imp = r_imp.json()
+    assert gen["cold_start"] is False and imp["cold_start"] is False
+    # The genuine batch must be trusted more than the impostor batch.
+    assert gen["trust_score"] > imp["trust_score"], (
+        f"discrimination failed: genuine={gen['trust_score']} impostor={imp['trust_score']}"
+    )
+    # And the impostor must produce a meaningfully lower score.
+    assert imp["trust_score"] < gen["trust_score"] - 20
 
 
 def test_health():

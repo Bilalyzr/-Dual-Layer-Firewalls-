@@ -11,8 +11,11 @@ __pycache__/
 # build output
 client/dist/
 
-# trained artifacts (large) — keep seed dataset, ignore model blobs
+# trained artifacts (large, regenerable) — keep seed datasets, ignore model blobs
 engine/models/*.joblib
+engine/models/*.pt
+engine/models/*.json
+engine/biometric/*.npz
 
 # env (secrets — never commit)
 .env

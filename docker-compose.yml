@@ -34,7 +34,7 @@ services:
       BIOMETRIC_MIN_SAMPLES: ${BIOMETRIC_MIN_SAMPLES:-120}
       BIOMETRIC_Z_THRESHOLD: ${BIOMETRIC_Z_THRESHOLD:-2.5}
     ports:
-      - "8000:8000"
+      - "8011:8011"
 
   proxy:
     build: ./proxy
@@ -45,7 +45,7 @@ services:
         condition: service_healthy
     environment:
       MONGO_URI: mongodb://mongo:27017/firewall
-      ENGINE_URL: http://engine:8000
+      ENGINE_URL: http://engine:8011
       PROXY_PORT: "4000"
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}

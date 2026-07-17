@@ -8,6 +8,7 @@ Two endpoints used by the Node proxy:
 Health: GET /
 """
 from __future__ import annotations
+import asyncio
 import os
 import time
 from typing import Any
@@ -15,6 +16,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+# Async SHAP result store (Req 3.4). request_id -> {status, result|error}.
+_SHAP_STORE: dict[str, dict[str, Any]] = {}
 
 from .biometric.anomaly import (
     DEFAULT_MIN_SAMPLES,
@@ -86,7 +90,7 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
 
 
 @app.post("/score-batch")
-def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
+async def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
     min_samples = req.min_samples or int(
         os.getenv("BIOMETRIC_MIN_SAMPLES", DEFAULT_MIN_SAMPLES)
     )
@@ -104,8 +108,10 @@ def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
         flight_times=req.flight_times,
         min_samples=min_samples,
         z_threshold=z_threshold,
+        dwell_history=req.dwell_history,
+        flight_history=req.flight_history,
     )
-    return {
+    response = {
         "trust_score": result.trust_score,
         "risk_score": result.risk_score,
         "z": result.z,
@@ -113,7 +119,63 @@ def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
         "reason": result.reason,
         "dwell_mean": result.dwell_mean,
         "flight_mean": result.flight_mean,
+        "model_used": result.model_used,
     }
+    if result.p_genuine is not None:
+        response["p_genuine"] = result.p_genuine
+
+    # Async SHAP (Req 3.4) — fire-and-forget off the scoring path. The result is
+    # stored and retrievable via /shap/{request_id}; never awaited here.
+    if result.model_used == "ensemble" and not result.cold_start:
+        import numpy as np
+        from .biometric.features import (
+            load_seq_normalizer, load_stats_scaler, sequence_stats,
+        )
+        from .biometric.lstm_model import embed_batch
+        from .biometric.anomaly import _build_sequence, SEQ_LEN
+
+        try:
+            pairs = _build_sequence(
+                req.dwell_history, req.flight_history,
+                req.dwell_times, req.flight_times,
+            )
+            seq = np.array(pairs, dtype=np.float32).reshape(1, SEQ_LEN, 2)
+            seq_norm = load_seq_normalizer()
+            seq_n = seq_norm.transform(seq) if seq_norm else seq
+            bl_dwell_mean = float(np.mean(req.dwell_history)) if req.dwell_history else 0.0
+            bl_flight_mean = float(np.mean(req.flight_history)) if req.flight_history else 0.0
+            stats_v = sequence_stats(seq[0], bl_dwell_mean, bl_flight_mean).reshape(1, -1)
+            stats_scaler = load_stats_scaler()
+            stats_n = (stats_scaler.transform(stats_v).astype(np.float32)
+                       if stats_scaler else stats_v.astype(np.float32))
+            emb = embed_batch(seq_n)
+            feats = np.concatenate([emb, stats_n], axis=1).astype(np.float32)
+
+            request_id = f"shp-{os.urandom(6).hex()}"
+            response["shap_request_id"] = request_id
+            asyncio.create_task(_run_shap(request_id, feats))
+        except Exception as exc:  # SHAP must never break scoring
+            response["shap_error"] = f"{type(exc).__name__}: {exc}"
+
+    return response
+
+
+async def _run_shap(request_id: str, feats) -> None:
+    """Background SHAP task — stores result for /shap/{request_id} retrieval."""
+    try:
+        from .biometric.explain import explain_async
+        result = await explain_async(feats, top_k=6)
+        _SHAP_STORE[request_id] = {"status": "done", "result": result}
+    except Exception as exc:
+        _SHAP_STORE[request_id] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+
+
+@app.get("/shap/{request_id}")
+def get_shap(request_id: str) -> dict[str, Any]:
+    entry = _SHAP_STORE.get(request_id)
+    if entry is None:
+        return {"status": "pending", "request_id": request_id}
+    return {"request_id": request_id, **entry}
 
 
 @app.get("/health")

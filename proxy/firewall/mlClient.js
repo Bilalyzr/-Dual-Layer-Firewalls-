@@ -7,7 +7,7 @@
  */
 
 const ENGINE_URL =
-  process.env.ENGINE_URL || "http://localhost:8000";
+  process.env.ENGINE_URL || "http://localhost:8011";
 
 /** Classify a prompt. Returns { threatProbability, latencyMs, ready }. */
 export async function classifyPrompt(text) {

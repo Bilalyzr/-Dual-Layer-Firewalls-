@@ -75,7 +75,7 @@ The repo ships with one-click VS Code config (`.vscode/`).
 - **Task menu — `Ctrl+Shift+P` → "Tasks: Run Task"**: start each service separately, run the benchmark,
   or stop everything.
 
-Then open **http://localhost:5174**. Ports used: engine `8001`, proxy `4001`, dashboard `5174`
+Then open **http://localhost:5174**. Ports used: engine `8011`, proxy `4001`, dashboard `5174`
 (chosen to avoid your Apache on 8080).
 
 Your GLM key + ports live in `.env.local` (gitignored) — already configured. Edit it to change models/thresholds.
@@ -85,19 +85,19 @@ Your GLM key + ports live in `.env.local` (gitignored) — already configured. E
 ## Quick start (local dev)
 
 ```bash
-# 1. Python engine
-cd engine
-python -m venv ../.venv && ../.venv/Scripts/python -m pip install -r requirements.txt   # Windows
-#   ../.venv/bin/python -m pip install -r requirements.txt                               # macOS/Linux
-python -m engine.classifier.train     # trains classifier → engine/models/*.joblib
-python -m uvicorn engine.app:app --reload --port 8000
+# 1. Python engine (train both models first)
+python -m venv .venv && .venv/Scripts/python -m pip install -r engine/requirements.txt   # Windows
+#   .venv/bin/python -m pip install -r engine/requirements.txt                            # macOS/Linux
+python -m engine.classifier.train          # Tier 1: jailbreak classifier
+python -m engine.biometric.train_biometric # Tier 2: LSTM + ensemble biometric models
+python -m uvicorn engine.app:app --reload --port 8011
 
 # 2. Node proxy (new terminal)
 cd proxy && npm install
-ENGINE_URL=http://localhost:8000 FIREWALL_MODE=enforce npm start
+ENGINE_URL=http://127.0.0.1:8011 FIREWALL_MODE=enforce npm start
 
 # 3. React client (new terminal)
-cd client && npm install && npm run dev    # http://localhost:5173
+cd client && npm install && npm run dev    # http://localhost:5173 (proxies /api to :4001)
 ```
 
 ---
