@@ -70,19 +70,23 @@ export default function BiometricMonitor({ userId }) {
       </div>
 
       <ul className="feed">
-        {biometric.slice(0, 8).map((b, i) => (
-          <li key={i} className="feed-item">
-            <span className="cat-tag" style={{ background: trustColor(b.trust_score) }}>
-              {Math.round(b.trust_score)}
-            </span>
-            <div className="feed-body">
-              <div className="feed-label">{b.reason}</div>
-              <div className="feed-meta">
-                {b.userId} · batch {b.batchSize} · {new Date(b.ts).toLocaleTimeString()}
+        {biometric.slice(0, 8).map((b, i) => {
+          const t = typeof b.trust_score === "number" ? b.trust_score : null;
+          const ts = b.ts ? new Date(b.ts) : null;
+          return (
+            <li key={i} className="feed-item">
+              <span className="cat-tag" style={{ background: trustColor(t) }}>
+                {t === null ? "—" : Math.round(t)}
+              </span>
+              <div className="feed-body">
+                <div className="feed-label">{b.reason || "biometric update"}</div>
+                <div className="feed-meta">
+                  {b.userId || "anon"} · batch {b.batchSize ?? "?"} · {ts && !isNaN(ts) ? ts.toLocaleTimeString() : "—"}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

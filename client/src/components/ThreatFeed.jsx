@@ -48,23 +48,27 @@ export default function ThreatFeed() {
 
       <ul className="feed">
         {threats.length === 0 && <li className="muted">No threats detected yet.</li>}
-        {threats.map((t, i) => (
-          <li key={i} className="feed-item">
-            <span className="cat-tag" style={{ background: CAT_COLORS[t.category] || "#475569" }}>
-              {t.category}
-            </span>
-            <div className="feed-body">
-              <div className="feed-label">{t.label}</div>
-              <div className="feed-meta">
-                {t.categoryTitle} · {t.userId} · {new Date(t.ts).toLocaleTimeString()}
-                {t.kind === "outbound" ? " · OUTBOUND" : ""}
+        {threats.map((t, i) => {
+          const cat = t.category || "LLM01";
+          const ts = t.ts ? new Date(t.ts) : null;
+          return (
+            <li key={i} className="feed-item">
+              <span className="cat-tag" style={{ background: CAT_COLORS[cat] || "#475569" }}>
+                {cat}
+              </span>
+              <div className="feed-body">
+                <div className="feed-label">{t.label || "threat detected"}</div>
+                <div className="feed-meta">
+                  {t.categoryTitle || "Policy violation"} · {t.userId || "anon"} · {ts && !isNaN(ts) ? ts.toLocaleTimeString() : "—"}
+                  {t.kind === "outbound" ? " · OUTBOUND" : ""}
+                </div>
               </div>
-            </div>
-            <span className={`pill ${t.blocked ? "pill-bad" : "pill-warn"}`}>
-              {t.blocked ? "BLOCKED" : "DETECTED"}
-            </span>
-          </li>
-        ))}
+              <span className={`pill ${t.blocked ? "pill-bad" : "pill-warn"}`}>
+                {t.blocked ? "BLOCKED" : "DETECTED"}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

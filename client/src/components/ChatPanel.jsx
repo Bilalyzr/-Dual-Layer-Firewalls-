@@ -47,7 +47,7 @@ export default function ChatPanel({ userId }) {
           ...m,
           {
             role: "assistant",
-            text: data.answer,
+            text: data.answer || "(empty response)",
             verdict: data.verdict,
             simulated: data.simulated,
           },

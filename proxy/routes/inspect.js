@@ -26,6 +26,10 @@ router.post("/", async (req, res) => {
   if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
     return res.status(400).json({ error: "missing 'prompt'" });
   }
+  const MAX_PROMPT = parseInt(process.env.MAX_PROMPT_CHARS || "4000", 10);
+  if (prompt.length > MAX_PROMPT) {
+    return res.status(413).json({ error: "prompt too large", limit: MAX_PROMPT });
+  }
   const THRESHOLD = threshold();
   const [heuristic, classification] = await Promise.all([
     runHeuristics(prompt),

@@ -33,7 +33,8 @@ function loadEnv() {
 loadEnv();
 
 const PY = process.env.PYTHON || pickPython();
-const ENGINE_PORT = process.env.ENGINE_PORT || "8001";
+// NOTE: engine uses 8011 by default because Docker Desktop squats on 8001.
+const ENGINE_PORT = process.env.ENGINE_PORT || "8011";
 const PROXY_PORT = process.env.PROXY_PORT || "4001";
 const CLIENT_PORT = process.env.CLIENT_PORT || "5174";
 

@@ -35,8 +35,11 @@ export default function MetricsPanel() {
   if (!m) return <section className="panel"><p className="muted">loading metrics…</p></section>;
 
   const c = m.classifier || {};
-  const ready = c.ready;
-  const targetMet = m.heuristicLatencyMs < 5;
+  const ready = c.ready === true;
+  const hasF1 = ready && typeof c.f1 === "number";
+  const targetMet = typeof m.heuristicLatencyMs === "number" && m.heuristicLatencyMs < 5;
+
+  const fmt = (v, digits = 2) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "n/a");
 
   return (
     <section className="panel">
@@ -47,27 +50,27 @@ export default function MetricsPanel() {
       <div className="stat-row">
         <Stat
           label="Heuristic latency"
-          value={`${m.heuristicLatencyMs.toFixed(3)} ms`}
+          value={`${fmt(m.heuristicLatencyMs, 3)} ms`}
           sub="target < 5ms"
           good={targetMet}
         />
         <Stat
           label="Classifier latency"
-          value={ready ? `${c.avgClassifyLatencyMs} ms` : "n/a"}
+          value={ready ? `${fmt(c.avgClassifyLatencyMs, 2)} ms` : "n/a"}
           sub="engine round-trip"
         />
         <Stat
           label="Classifier F1"
-          value={ready ? c.f1.toFixed(2) : "n/a"}
-          sub={`probe n=${c.probeSize}, thr ${c.threshold}`}
-          good={ready ? c.f1 >= 0.7 : undefined}
+          value={hasF1 ? c.f1.toFixed(2) : "n/a"}
+          sub={ready ? `probe n=${c.probeSize ?? "?"}, thr ${c.threshold ?? "?"}` : "engine offline"}
+          good={hasF1 ? c.f1 >= 0.7 : undefined}
         />
-        <Stat label="Precision" value={ready ? c.precision.toFixed(2) : "n/a"} />
-        <Stat label="Recall" value={ready ? c.recall.toFixed(2) : "n/a"} />
+        <Stat label="Precision" value={ready ? fmt(c.precision, 2) : "n/a"} />
+        <Stat label="Recall" value={ready ? fmt(c.recall, 2) : "n/a"} />
         <Stat
           label="DB"
-          value={m.db.persistent ? "mongo" : "in-mem"}
-          sub={`alerts ${m.db.alerts ?? 0} · samples ${m.db.samples ?? 0}`}
+          value={m.db?.persistent ? "mongo" : "in-mem"}
+          sub={`alerts ${m.db?.alerts ?? 0} · samples ${m.db?.samples ?? 0}`}
         />
       </div>
     </section>

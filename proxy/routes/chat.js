@@ -39,6 +39,16 @@ router.post("/", async (req, res) => {
   if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
     return res.status(400).json({ error: "missing 'prompt'" });
   }
+  // Reject oversized prompts (abuse/noise) before they reach the LLM. Legitimate
+  // chat prompts are short; a 10KB blob just blocks the GLM call for ~10s.
+  const MAX_PROMPT = parseInt(process.env.MAX_PROMPT_CHARS || "4000", 10);
+  if (prompt.length > MAX_PROMPT) {
+    return res.status(413).json({
+      error: "prompt too large",
+      limit: MAX_PROMPT,
+      length: prompt.length,
+    });
+  }
 
   // 1.2 + 1.3 — heuristic + ML, run in parallel
   const [heuristic, classification] = await Promise.all([
