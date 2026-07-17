@@ -6,6 +6,8 @@
  * Top status bar shows operational modes + service health.
  */
 import { useState } from "react";
+import Logo from "./components/Logo.jsx";
+import BootLoader from "./components/BootLoader.jsx";
 import StatusBar from "./components/StatusBar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import ThreatFeed from "./components/ThreatFeed.jsx";
@@ -24,11 +26,14 @@ export default function App() {
     return id;
   });
 
+  const [booting, setBooting] = useState(true);
+
   return (
     <>
+      {booting && <BootLoader onDone={() => setBooting(false)} />}
       <header className="topbar">
         <div className="brand">
-          <span className="logo">🛡️</span>
+          <Logo idPrefix="hdr" />
           <div className="brand-text">
             <h1>Dual-Layer <span className="accent">AI Firewall</span></h1>
             <div className="sub">
