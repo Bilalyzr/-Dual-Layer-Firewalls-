@@ -26,7 +26,26 @@ export default function ChatPanel({ userId }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: text, userId }),
       });
-      const data = await res.json();
+      // Guard: empty / non-JSON / non-OK responses (timeout, proxy drop, 500)
+      // previously surfaced as "Unexpected end of JSON input". Handle cleanly.
+      const textBody = await res.text();
+      let data;
+      try {
+        data = textBody ? JSON.parse(textBody) : {};
+      } catch {
+        setMessages((m) => [
+          ...m,
+          { role: "system", text: `⚠ server returned HTTP ${res.status} (no JSON). The proxy may be down or the LLM timed out.` },
+        ]);
+        return;
+      }
+      if (!res.ok && !data.error && !data.blocked) {
+        setMessages((m) => [
+          ...m,
+          { role: "system", text: `⚠ server error HTTP ${res.status}. Is the proxy running on :4001?` },
+        ]);
+        return;
+      }
       if (data.blocked) {
         setMessages((m) => [
           ...m,

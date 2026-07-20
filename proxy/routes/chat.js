@@ -14,6 +14,7 @@ import { runHeuristics, OWASP_TITLES } from "../firewall/heuristics.js";
 import { classifyPrompt } from "../firewall/mlClient.js";
 import { checkOutput } from "../firewall/outputCheck.js";
 import { chatCompletion } from "../llm/client.js";
+import { isAgentic, runTrifecta } from "../agents/orchestrator.js";
 import { insertAlert, insertSample } from "../db/mongo.js";
 import { publish } from "../middleware/eventBus.js";
 
@@ -126,10 +127,40 @@ router.post("/", async (req, res) => {
   }
 
   // Allowed → forward to LLM backend.
+  // Phase 5: agentic prompts (untrusted content + implied action) route through
+  // the Trifecta Reader→Validator→Actor flow; normal Q&A bypasses to a direct
+  // LLM call. Both paths return {content, raw} so the outbound check is shared.
   let llmResponse;
+  let agentTrace = null;
   try {
-    const r = await chatCompletion(prompt);
-    llmResponse = r;
+    if (isAgentic(prompt)) {
+      const r = await runTrifecta({
+        prompt,
+        userId,
+        emit: (ev) => {
+          // Stream each agent stage to the dashboard audit trail (Req 2.5, 4.3).
+          const event = { userId, ...ev, promptPreview: mask(prompt, 80), ts: new Date() };
+          publish("agent", event);
+        },
+      });
+      llmResponse = r;
+      agentTrace = r.agentTrace;
+      // Persist a summary of the agent decision for SecOps audit.
+      await insertAlert({
+        userId,
+        kind: "agent",
+        category: r.agentTrace?.blocked ? "LLM06" : "LLM05",
+        categoryTitle: r.agentTrace?.blocked ? "Excessive Agency (blocked)" : "Agent Action (audited)",
+        label: `Trifecta ${r.agentTrace?.blocked ? "BLOCKED: " + r.agentTrace.blockReason : "executed tool " + (r.agentTrace?.actor?.tool || "none")}`,
+        prompt: mask(prompt),
+        mode: MODE,
+        blocked: !!r.agentTrace?.blocked,
+        agentTrace: r.agentTrace,
+        ts: new Date(),
+      });
+    } else {
+      llmResponse = await chatCompletion(prompt);
+    }
   } catch (err) {
     return res.status(502).json({
       blocked: false,
@@ -176,6 +207,8 @@ router.post("/", async (req, res) => {
     redactedOutbound: output.blocked && MODE === "enforce",
     outboundCheck: output,
     simulated: llmResponse.simulated || false,
+    agentic: agentTrace !== null,
+    agentTrace,
     verdict,
     latencyMs: +(performance.now() - t0).toFixed(2),
   });

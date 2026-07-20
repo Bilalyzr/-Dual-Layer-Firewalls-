@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 export function useThreatStream(max = 50) {
   const [threats, setThreats] = useState([]);
   const [biometric, setBiometric] = useState([]);
+  const [agentEvents, setAgentEvents] = useState([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -33,9 +34,15 @@ export function useThreatStream(max = 50) {
         push(setBiometric, payload);
       } catch {}
     });
+    es.addEventListener("agent", (e) => {
+      try {
+        const { payload } = JSON.parse(e.data);
+        push(setAgentEvents, payload);
+      } catch {}
+    });
 
     return () => es.close();
   }, [max]);
 
-  return { threats, biometric, connected };
+  return { threats, biometric, agentEvents, connected };
 }

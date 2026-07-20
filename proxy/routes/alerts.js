@@ -37,12 +37,15 @@ router.get("/status", async (_req, res) => {
     llm: llmConfig(),
     db: dbStats,
     tiers: {
-      current: "Tier 1 (MVP/PoC)",
+      current: "Tier 1 + Tier 2 (Phases 1–5)",
+      implemented: [
+        "Phase 4: LSTM + RF/GB/MLP biometric ensemble + async SHAP",
+        "Phase 5: Trifecta Reader→Validator→Actor agents (schema validation + RBAC)",
+      ],
       deferred: [
-        "LSTM + RF/XGBoost/MLP ensemble (Phase 4)",
-        "Async SHAP explainability (Phase 4)",
-        "LangGraph Reader/Actor Trifecta agents (Phase 5)",
         "FIDO2 step-up MFA enforcement (Phase 4)",
+        "OS-level Reader-Agent sandboxing (gVisor/Docker sidecars)",
+        "Real external tool integrations (email/calendar/CRM)",
       ],
     },
   });

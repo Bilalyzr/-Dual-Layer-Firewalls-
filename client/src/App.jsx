@@ -59,7 +59,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        TIER 1 MVP · IMPLEMENTATION PLAN PHASES 1–3 · STACK: REACT → NODE.JS PROXY → PYTHON (SCIKIT-LEARN) → MONGODB
+        TIER 1 + TIER 2 · IMPLEMENTATION PLAN PHASES 1–5 · STACK: REACT → NODE.JS PROXY → PYTHON (SCIKIT-LEARN + LSTM) → MONGODB
       </footer>
     </>
   );

@@ -6,9 +6,12 @@
  * entirely via env (see .env.example).
  */
 
-const BASE_URL = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-const API_KEY = process.env.LLM_API_KEY || "";
-const MODEL = process.env.LLM_MODEL || "gpt-4o-mini";
+// Read env lazily (at call time) rather than caching at module load, so the
+// config is correct regardless of import ordering vs. dotenv, and so tests can
+// vary it per-case without a fresh import.
+const baseUrl = () => (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+const apiKey = () => process.env.LLM_API_KEY || "";
+const model = () => process.env.LLM_MODEL || "gpt-4o-mini";
 
 const SYSTEM_PROMPT =
   "You are a concise assistant integrated behind the Dual-Layer AI Firewall. " +
@@ -17,49 +20,50 @@ const SYSTEM_PROMPT =
 
 /** True if at least the key looks configured; local servers (Ollama) may omit it. */
 export function llmConfigured() {
-  return Boolean(MODEL && (API_KEY || /localhost|127\.0\.0\.1|ollama/i.test(BASE_URL)));
+  return Boolean(model() && (apiKey() || /localhost|127\.0\.0\.1|ollama/i.test(baseUrl())));
 }
 
 export function llmConfig() {
   return {
-    baseURL: BASE_URL,
-    model: MODEL,
-    hasKey: Boolean(API_KEY),
+    baseURL: baseUrl(),
+    model: model(),
+    hasKey: Boolean(apiKey()),
     configured: llmConfigured(),
   };
 }
 
 /**
- * Generate a chat completion.
- * @param {string} userPrompt
- * @returns {Promise<{content: string, raw: any}>}
+ * Generate a chat completion from a full messages array — used by the Trifecta
+ * agents (Phase 5) to give each role its own system prompt + tunable params.
+ *
+ * @param {Array<{role:string, content:string}>} messages
+ * @param {{temperature?:number, maxTokens?:number, simulatedPrefix?:string}} [opts]
+ * @returns {Promise<{content: string, raw: any, simulated?: boolean}>}
  */
-export async function chatCompletion(userPrompt) {
+export async function chatCompletionMessages(messages, opts = {}) {
+  const { temperature = 0.4, maxTokens = 300, simulatedPrefix } = opts;
   if (!llmConfigured()) {
-    // Demo fallback so the firewall still has something to intercept/inspect.
+    const last = [...messages].reverse().find((m) => m.role === "user");
     return {
       content:
-        "[LLM not configured] Set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL in .env. " +
-        "Proxy still inspected this request. You said: " +
-        userPrompt.slice(0, 120),
+        (simulatedPrefix || "[LLM not configured] ") +
+        (last?.content || "").slice(0, 160),
       raw: null,
       simulated: true,
     };
   }
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const key = apiKey();
+  const res = await fetch(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+      ...(key ? { Authorization: `Bearer ${key}` } : {}),
     },
     body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.4,
-      max_tokens: 300,
+      model: model(),
+      messages,
+      temperature,
+      max_tokens: maxTokens,
     }),
     signal: AbortSignal.timeout(20000),
   });
@@ -72,4 +76,20 @@ export async function chatCompletion(userPrompt) {
     content: data?.choices?.[0]?.message?.content ?? "",
     raw: data,
   };
+}
+
+/**
+ * Generate a chat completion (convenience: single user prompt + default system).
+ * Delegates to chatCompletionMessages. Existing callers are unaffected.
+ * @param {string} userPrompt
+ * @returns {Promise<{content: string, raw: any, simulated?: boolean}>}
+ */
+export async function chatCompletion(userPrompt) {
+  return chatCompletionMessages(
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    { simulatedPrefix: "[LLM not configured] You said: " }
+  );
 }

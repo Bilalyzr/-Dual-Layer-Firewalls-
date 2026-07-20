@@ -40,6 +40,9 @@ const CLIENT_PORT = process.env.CLIENT_PORT || "5174";
 
 const C = { engine: "\x1b[36m", proxy: "\x1b[33m", client: "\x1b[35m", dim: "\x1b[2m", reset: "\x1b[0m", bold: "\x1b[1m" };
 
+// LAN exposure is opt-in (see viteArgs below) because the stack has no auth.
+const EXPOSE_LAN = /^(1|true|yes)$/i.test(process.env.EXPOSE_LAN || "");
+
 function pickPython() {
   const venvExe = path.join(ROOT, ".venv", "Scripts", "python.exe");
   if (existsSync(venvExe)) return venvExe;
@@ -95,7 +98,8 @@ process.on("SIGTERM", shutdown);
 console.log(`${C.bold}Dual-Layer AI Firewall — local run${C.reset}`);
 console.log(`${C.dim}  python:   ${PY}`);
 console.log(`  model:    ${process.env.LLM_MODEL || "(none)"}  @  ${process.env.LLM_BASE_URL || "(none)"}`);
-console.log(`  engine → :${ENGINE_PORT}   proxy → :${PROXY_PORT}   dashboard → :${CLIENT_PORT}${C.reset}\n`);
+console.log(`  engine → :${ENGINE_PORT}   proxy → :${PROXY_PORT}   dashboard → :${CLIENT_PORT}`);
+console.log(`  binding:  ${EXPOSE_LAN ? "LAN (0.0.0.0 — no auth; trusted networks only)" : "localhost only (set EXPOSE_LAN=1 for LAN access)"}${C.reset}\n`);
 
 // Engine first.
 start("engine", C.engine, PY, ["-m", "uvicorn", "engine.app:app", "--host", "127.0.0.1", "--port", ENGINE_PORT], { cwd: ROOT });
@@ -111,9 +115,11 @@ setTimeout(() => {
 // Dashboard next. Prefer the local vite binary to avoid npx/PATH issues on Windows.
 const VITE_BIN = path.join(ROOT, "client", "node_modules", ".bin", IS_WIN ? "vite.cmd" : "vite");
 const viteCmd = existsSync(VITE_BIN) ? VITE_BIN : "npx";
-const viteArgs = existsSync(VITE_BIN)
-  ? ["--port", CLIENT_PORT, "--host"]
-  : ["vite", "--port", CLIENT_PORT, "--host"];
+// Bind localhost only by default — the proxy/engine have no auth and hold a live
+// LLM key, so exposing the dashboard on the LAN lets anyone on the network drive
+// them. Opt in with EXPOSE_LAN=1 when you actually need cross-device access.
+const baseViteArgs = ["--port", CLIENT_PORT, ...(EXPOSE_LAN ? ["--host"] : [])];
+const viteArgs = existsSync(VITE_BIN) ? baseViteArgs : ["vite", ...baseViteArgs];
 setTimeout(() => {
   start("client", C.client, viteCmd, viteArgs, {
     cwd: path.join(ROOT, "client"),

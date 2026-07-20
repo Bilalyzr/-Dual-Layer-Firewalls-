@@ -7,19 +7,10 @@
  *   • streams live events to the dashboard (/api/events),
  *   • exposes alerts, status and benchmark metrics.
  */
-// Load env: prefer .env.local (local dev) over .env (docker). Existing process
-// env vars always win.
-import dotenv from "dotenv";
-import { existsSync } from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-if (existsSync(path.join(__root, ".env.local"))) {
-  dotenv.config({ path: path.join(__root, ".env.local") });
-} else {
-  dotenv.config({ path: path.join(__root, ".env") });
-}
+// Load env FIRST — this import must precede every module that reads env at load
+// time (llm/client.js, firewall/mlClient.js). ES imports are hoisted, so a
+// dotenv.config() call further down would run too late. See config/env.js.
+import "./config/env.js";
 import express from "express";
 import cors from "cors";
 

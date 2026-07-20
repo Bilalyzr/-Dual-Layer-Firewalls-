@@ -5,6 +5,8 @@
   "description": "Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform — Tier 1 MVP.",
   "type": "module",
   "scripts": {
+    "dev": "node scripts/runner.js",
+    "start": "node scripts/runner.js",
     "train": "cd engine && python -m engine.classifier.train || python classifier/train.py",
     "seed": "node scripts/seed_db.js",
     "benchmark": "node scripts/benchmark.js",

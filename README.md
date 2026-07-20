@@ -1,7 +1,8 @@
 # 🛡️ Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
 
-A working **Tier 1 MVP** of the platform specified in `docs/PRD.md` and sequenced by
-`docs/IMPLEMENTATION_PLAN.md`. It is a secure proxy that sits in front of an LLM
+A working implementation of the platform specified in `docs/PRD.md` and sequenced by
+`docs/IMPLEMENTATION_PLAN.md`, covering **Tier 1 (Phases 1–3)** plus the **Tier 2
+(Phases 4–5)** engine additions. It is a secure proxy that sits in front of an LLM
 application and:
 
 - **Layer 1 — Semantic AI Firewall** — intercepts every prompt, scans it with regex
@@ -11,9 +12,10 @@ application and:
   continuously scores session trust against a per-user baseline (rolling-average
   z-score), with a cold-start MFA fallback.
 
-> Built from the two source documents in this folder. **Tier 2** items (LSTM+ensemble,
-> SHAP, LangGraph Trifecta Reader/Actor agents, FIDO2 step-up) are intentionally
-> deferred and surfaced as placeholder panels in the dashboard.
+> Built from the two source documents in this folder. Tier 2 now adds the LSTM+ensemble
+> biometric engine, async SHAP explainability, and the LangGraph-style Trifecta
+> Reader→Validator→Actor agents. FIDO2 step-up MFA and OS-level agent sandboxing remain
+> deferred (see the bottom of this file).
 
 ---
 
@@ -209,8 +211,14 @@ dual-layer-firewall/
 └── .env.example
 ```
 
-## What's deliberately **not** here (Tier 2)
+## Implemented in Tier 2 (Phases 4–5)
 
-Per the implementation plan, these require the Phase 3 benchmark to pass first:
-LSTM + RF/XGBoost/MLP biometric ensemble · async SHAP explainability · LangGraph
-Reader/Actor Trifecta agent sandboxing · FIDO2 step-up MFA enforcement · Llama Guard 4.
+LSTM + RF/GB/MLP biometric ensemble · async SHAP explainability (`/api/shap`) ·
+Trifecta Reader→Validator→Actor agents with JSON-schema validation + RBAC
+(`proxy/agents/`).
+
+## What's still deliberately **not** here
+
+FIDO2 step-up MFA enforcement · OS-level Reader-Agent sandboxing (gVisor/Docker
+sidecars) · real external tool integrations (email/calendar/CRM) · Llama Guard 4.
+These are the remaining items surfaced under `deferred` in `/api/alerts/status`.

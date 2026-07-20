@@ -47,7 +47,9 @@ export default function StatusBar() {
       <Dot ok={s.engine.up} label="engine" />
       <Dot ok={s.llm.configured} label={`llm ${s.llm.model}`} />
       <Dot ok={s.db.persistent} label={`db${s.db.persistent ? "" : " (in-mem)"}`} />
-      <span className="sb-item right muted small">Tier 1 MVP · {s.tiers.deferred.length} Tier-2 items deferred</span>
+      <span className="sb-item right muted small">
+        {s.tiers?.current || "Tier 1"} · {s.tiers?.deferred?.length ?? 0} items deferred
+      </span>
     </div>
   );
 }

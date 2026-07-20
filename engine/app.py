@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field
 
 # Async SHAP result store (Req 3.4). request_id -> {status, result|error}.
 _SHAP_STORE: dict[str, dict[str, Any]] = {}
+# Per-user SHAP throttle: userId -> last-run timestamp (avoids re-running the
+# ~1.2s SHAP computation on every keystroke batch).
+_SHAP_LAST: dict[str, float] = {}
 
 from .biometric.anomaly import (
     DEFAULT_MIN_SAMPLES,
@@ -126,7 +129,27 @@ async def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
 
     # Async SHAP (Req 3.4) — fire-and-forget off the scoring path. The result is
     # stored and retrievable via /shap/{request_id}; never awaited here.
-    if result.model_used == "ensemble" and not result.cold_start:
+    # Throttled per-user: SHAP is for audit/compliance, not real-time display, so
+    # we recompute at most every few seconds (avoids burning ~1.2s of CPU on every
+    # 6-key batch).
+    SHAP_THROTTLE_S = float(os.getenv("SHAP_THROTTLE_S", "8"))
+    # Throttle key: a signature of this user's baseline so repeated batches from
+    # the same user share a throttle bucket (the engine scores anonymously, so
+    # we derive a proxy identity from the baseline length + first sample).
+    throttle_key = f"u{req.prior_n}:{req.dwell_history[0]:.1f}" if req.dwell_history else "anon"
+    def _should_run_shap() -> bool:
+        now = time.time()
+        last = _SHAP_LAST.get(throttle_key, 0.0)
+        if now - last < SHAP_THROTTLE_S:
+            return False
+        _SHAP_LAST[throttle_key] = now
+        return True
+
+    if (
+        result.model_used == "ensemble"
+        and not result.cold_start
+        and _should_run_shap()
+    ):
         import numpy as np
         from .biometric.features import (
             load_seq_normalizer, load_stats_scaler, sequence_stats,
@@ -160,14 +183,27 @@ async def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
     return response
 
 
+# Keep the in-memory SHAP result store bounded (results are short-lived, fetched
+# once by the dashboard) so a long-running engine can't leak memory.
+_SHAP_STORE_MAX = 200
+
+
+def _store_shap(request_id: str, entry: dict[str, Any]) -> None:
+    _SHAP_STORE[request_id] = entry
+    if len(_SHAP_STORE) > _SHAP_STORE_MAX:
+        # Drop the oldest insertions (dicts preserve insertion order in 3.7+).
+        for stale in list(_SHAP_STORE.keys())[: len(_SHAP_STORE) - _SHAP_STORE_MAX]:
+            _SHAP_STORE.pop(stale, None)
+
+
 async def _run_shap(request_id: str, feats) -> None:
     """Background SHAP task — stores result for /shap/{request_id} retrieval."""
     try:
         from .biometric.explain import explain_async
         result = await explain_async(feats, top_k=6)
-        _SHAP_STORE[request_id] = {"status": "done", "result": result}
+        _store_shap(request_id, {"status": "done", "result": result})
     except Exception as exc:
-        _SHAP_STORE[request_id] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+        _store_shap(request_id, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
 
 
 @app.get("/shap/{request_id}")

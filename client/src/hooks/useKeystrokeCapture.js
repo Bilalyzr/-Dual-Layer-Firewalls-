@@ -13,8 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const BATCH_SIZE = 12;          // flush after this many events
-const FLUSH_MS = 4000;          // …or after this idle window
+const BATCH_SIZE = 6;            // flush after this many events (responsive gauge)
+const FLUSH_MS = 1500;           // …or after this idle window (was 4s — felt laggy)
 const API = "/api/biometric/batch";
 
 export function useKeystrokeCapture({ userId, enabled = true } = {}) {
@@ -34,14 +34,16 @@ export function useKeystrokeCapture({ userId, enabled = true } = {}) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: userId || "anon", events: batch }),
       });
-      const j = await res.json();
+      const body = await res.text();
+      if (!body) return; // empty response (proxy down / timeout) — keep collecting
+      let j;
+      try { j = JSON.parse(body); } catch { return; }
       if (j && typeof j.trust_score === "number") {
         lastResult.current = j;
         setTrust(j);
       }
     } catch (err) {
-      // keep collecting; proxy may be briefly unavailable
-      console.warn("[keystroke] flush failed", err.message);
+      // network error — keep collecting; proxy may be briefly unavailable
     }
   }, [userId]);
 
