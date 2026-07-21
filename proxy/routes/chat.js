@@ -13,6 +13,7 @@ import { Router } from "express";
 import { runHeuristics, OWASP_TITLES } from "../firewall/heuristics.js";
 import { classifyPrompt } from "../firewall/mlClient.js";
 import { checkOutput } from "../firewall/outputCheck.js";
+import { moderateContent } from "../firewall/llamaGuard.js";
 import { chatCompletion } from "../llm/client.js";
 import { isAgentic, runTrifecta } from "../agents/orchestrator.js";
 import { insertAlert, insertSample } from "../db/mongo.js";
@@ -33,8 +34,25 @@ function mask(text, n = 200) {
 
 router.post("/", async (req, res) => {
   const t0 = performance.now();
-  const userId = req.body?.userId || "anon";
+  // Prefer the verified session identity (EPIC A) over the client-supplied
+  // userId. Falls back to the bare userId so unauthenticated demo flows work.
+  const session = req.session || null;
+  const userId = session?.userId || req.body?.userId || "anon";
+  const sessionId = session?.sessionId || null;
   const prompt = req.body?.prompt || "";
+
+  // EPIC B step-up gate: a session whose keystroke trust collapsed is frozen
+  // until a fresh WebAuthn assertion clears it (see /api/auth/webauthn/*).
+  if (session?.trustState?.stepUpRequired) {
+    return res.status(401).json({
+      blocked: true,
+      reason: "step_up_required",
+      category: "MFA",
+      categoryTitle: "Step-up authentication required",
+      trustState: session.trustState,
+      latencyMs: +(performance.now() - t0).toFixed(2),
+    });
+  }
 
   // 1.1 inbound interception — reject malformed payloads
   if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
@@ -51,31 +69,47 @@ router.post("/", async (req, res) => {
     });
   }
 
-  // 1.2 + 1.3 — heuristic + ML, run in parallel
-  const [heuristic, classification] = await Promise.all([
+  const MODE = mode();
+  const THRESHOLD = threshold();
+  const SAMPLE_RATE = sampleRate();
+
+  // 1.2 + 1.3 + EPIC C — heuristic + ML + Llama Guard safety model, in parallel.
+  const [heuristic, classification, guardInput] = await Promise.all([
     runHeuristics(prompt),
     classifyPrompt(prompt),
+    moderateContent({ text: prompt, role: "user" }),
   ]);
 
   const threatProb = classification.threatProbability || 0;
   const engineReady = classification.ready !== false;
 
-  const MODE = mode();
-  const THRESHOLD = threshold();
-  const SAMPLE_RATE = sampleRate();
-
   // Threat if heuristics matched OR ML probability crosses threshold.
   const heuristicThreat = heuristic.matched;
   const mlThreat = engineReady && threatProb >= THRESHOLD;
-  const isThreat = heuristicThreat || mlThreat;
+  // Llama Guard verdict: unsafe, OR (enforce + endpoint degraded) → fail-closed.
+  const guardThreat =
+    guardInput.enabled && (!guardInput.safe || (guardInput.degraded && MODE === "enforce"));
+  const isThreat = heuristicThreat || mlThreat || guardThreat;
 
-  // Pick a category for the dashboard.
-  const category = heuristic.signals[0]?.category || (mlThreat ? "LLM01" : null);
+  // Pick a category for the dashboard — heuristics first, then Llama Guard's
+  // mapped OWASP tag, then a generic ML injection tag.
+  const category =
+    heuristic.signals[0]?.category ||
+    guardInput.owasp?.[0]?.owasp ||
+    (mlThreat ? "LLM01" : guardThreat ? "LLM05" : null);
   const verdict = {
     mode: MODE,
     threshold: THRESHOLD,
     heuristic: { matched: heuristicThreat, signals: heuristic.signals, latencyMs: heuristic.latencyMs },
     classifier: { threatProbability: threatProb, latencyMs: classification.latencyMs, ready: engineReady },
+    llamaGuard: {
+      enabled: guardInput.enabled,
+      safe: guardInput.safe,
+      categories: guardInput.categories,
+      owasp: guardInput.owasp,
+      degraded: guardInput.degraded || false,
+      latencyMs: guardInput.latencyMs,
+    },
     threat: isThreat,
     category,
   };
@@ -84,12 +118,17 @@ router.post("/", async (req, res) => {
   const willBlock = isThreat && MODE === "enforce";
 
   if (isThreat) {
+    const guardLabel = guardInput.degraded
+      ? "Llama Guard endpoint degraded (fail-closed)"
+      : `Llama Guard flagged unsafe content [${guardInput.categories.join(",")}]`;
     const label =
       heuristic.signals[0]?.label ||
-      `ML-classified prompt injection (p=${threatProb.toFixed(2)})`;
+      (mlThreat ? `ML-classified prompt injection (p=${threatProb.toFixed(2)})` : null) ||
+      (guardThreat ? guardLabel : `prompt injection (p=${threatProb.toFixed(2)})`);
     const alert = {
       userId,
-      kind: heuristicThreat ? "heuristic" : "ml",
+      sessionId,
+      kind: heuristicThreat ? "heuristic" : mlThreat ? "ml" : "llamaguard",
       category: category || "LLM01",
       categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
       label,
@@ -171,21 +210,41 @@ router.post("/", async (req, res) => {
     });
   }
 
-  // 1.4 outbound integrity check on the response.
-  const output = checkOutput(llmResponse.content);
+  // 1.4 outbound integrity check on the response — regex + Llama Guard, parallel.
+  const [output, guardOutput] = await Promise.all([
+    Promise.resolve(checkOutput(llmResponse.content)),
+    moderateContent({ text: llmResponse.content, role: "assistant" }),
+  ]);
+  const guardOutputUnsafe =
+    guardOutput.enabled && (!guardOutput.safe || (guardOutput.degraded && MODE === "enforce"));
+  const outboundBlocked = output.blocked || guardOutputUnsafe;
+  const outboundCategory = output.blocked ? "LLM02" : guardOutput.owasp?.[0]?.owasp || "LLM05";
+
   let finalContent = llmResponse.content;
-  if (output.blocked && MODE === "enforce") {
+  if (outboundBlocked && MODE === "enforce") {
+    const reasons = [
+      ...output.reasons,
+      ...(guardOutputUnsafe
+        ? [guardOutput.degraded
+            ? "Llama Guard endpoint degraded (fail-closed)"
+            : `Llama Guard unsafe output [${guardOutput.categories.join(",")}]`]
+        : []),
+    ];
     finalContent =
-      "[Response redacted by firewall outbound integrity check: " +
-      output.reasons.join(", ") + "]";
+      "[Response redacted by firewall outbound integrity check: " + reasons.join(", ") + "]";
+    const label = output.blocked
+      ? "Outbound exfiltration/tool-call blocked"
+      : "Outbound unsafe content blocked (Llama Guard)";
     await insertAlert({
       userId,
+      sessionId,
       kind: "outbound",
-      category: "LLM02",
-      categoryTitle: OWASP_TITLES.LLM02,
-      label: "Outbound exfiltration/tool-call blocked",
-      reasons: output.reasons,
+      category: outboundCategory,
+      categoryTitle: OWASP_TITLES[outboundCategory],
+      label,
+      reasons,
       snippets: output.snippets,
+      llamaGuard: guardOutput.owasp,
       mode: MODE,
       blocked: true,
       ts: new Date(),
@@ -193,9 +252,9 @@ router.post("/", async (req, res) => {
     publish("threat", {
       userId,
       kind: "outbound",
-      category: "LLM02",
-      categoryTitle: OWASP_TITLES.LLM02,
-      label: "Outbound exfiltration/tool-call blocked",
+      category: outboundCategory,
+      categoryTitle: OWASP_TITLES[outboundCategory],
+      label,
       blocked: true,
       ts: new Date(),
     });
@@ -204,8 +263,15 @@ router.post("/", async (req, res) => {
   return res.json({
     blocked: false,
     answer: finalContent,
-    redactedOutbound: output.blocked && MODE === "enforce",
+    redactedOutbound: outboundBlocked && MODE === "enforce",
     outboundCheck: output,
+    llamaGuardOutput: {
+      enabled: guardOutput.enabled,
+      safe: guardOutput.safe,
+      categories: guardOutput.categories,
+      owasp: guardOutput.owasp,
+      degraded: guardOutput.degraded || false,
+    },
     simulated: llmResponse.simulated || false,
     agentic: agentTrace !== null,
     agentTrace,

@@ -35,7 +35,56 @@ jobs:
           cache-dependency-path: engine/requirements.txt
       - name: Install engine deps
         run: pip install -r engine/requirements.txt
+      # Model artifacts (.joblib/.pt) are gitignored — train them in CI so the
+      # test suite is self-contained.
+      - name: Train classifier + biometric models
+        run: |
+          python -m engine.classifier.train
+          python -m engine.biometric.train_biometric
       - name: Run engine tests (pytest)
-        # Trained model artifacts are committed under engine/models/, so tests
-        # run without a separate training step.
         run: python -m pytest engine/tests/ -q
+
+  microservices:
+    name: Microservices (Epic G) smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: proxy/package-lock.json
+      - name: Install proxy deps
+        run: npm ci
+        working-directory: proxy
+      - name: Validate distributed compose file
+        run: docker compose -f docker-compose.micro.yml config -q
+      - name: Boot a split service and probe /healthz + /metrics
+        working-directory: proxy
+        run: |
+          PROXY_PORT=4090 node services/firewall-svc.js &
+          SVC=$!
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:4090/healthz && break
+            sleep 0.5
+          done
+          curl -sf http://127.0.0.1:4090/healthz | grep -q '"role":"firewall"'
+          curl -sf http://127.0.0.1:4090/metrics | grep -q 'service_up'
+          kill $SVC
+
+  client:
+    name: Client (Vite) build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Install client deps
+        run: npm ci
+        working-directory: client
+      - name: Build client
+        run: npm run build
+        working-directory: client

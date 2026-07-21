@@ -66,6 +66,30 @@ const READER_SYSTEM_PROMPT = [
  * @returns {Promise<{json:object|null, raw:string, valid:boolean, errors:string[], attempts:number, simulated:boolean}>}
  */
 export async function read(content, emit) {
+  // EPIC E: when the sandboxed reader-svc is available (READER_SVC_URL), route
+  // untrusted content to it over HTTP instead of processing in-process. The svc
+  // is network-isolated to ONLY the LLM endpoint, so a compromised prompt can't
+  // reach Mongo/engine. Falls back to in-process when unset.
+  const svcUrl = process.env.READER_SVC_URL;
+  if (svcUrl) {
+    try {
+      const res = await fetch(`${svcUrl}/read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = await res.json();
+      if (body && typeof body === "object" && "valid" in body) {
+        emit?.({ stage: "reader", via: "reader-svc", valid: body.valid });
+        return body;
+      }
+    } catch (err) {
+      emit?.({ stage: "reader", via: "reader-svc", error: String(err.message || err) });
+      // fall through to in-process
+    }
+  }
+
   const attempts = [];
   let lastErrors = [];
   let parsed = null;

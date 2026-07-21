@@ -5,7 +5,8 @@
  * right = live threat feed, biometric monitor, metrics, agent audit trail.
  * Top status bar shows operational modes + service health.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { ensureSession } from "./lib/api";
 import Logo from "./components/Logo.jsx";
 import BootLoader from "./components/BootLoader.jsx";
 import StatusBar from "./components/StatusBar.jsx";
@@ -27,6 +28,12 @@ export default function App() {
   });
 
   const [booting, setBooting] = useState(true);
+
+  // Bootstrap a signed session token on first load (Tier 2 EPIC A), binding it
+  // to the persisted userId so existing keystroke baselines carry over.
+  useEffect(() => {
+    ensureSession(userId).catch(() => {});
+  }, [userId]);
 
   return (
     <>

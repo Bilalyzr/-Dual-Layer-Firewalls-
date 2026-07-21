@@ -1,72 +1,56 @@
 /**
- * Mock tool registry (Req 2.4 — the Actor's permitted actions).
+ * EPIC F — tool registry. Delegates to the per-tool adapters in `tools/` and
+ * enforces the shared enforcement envelope (RBAC + schema + rate-limit + audit).
  *
- * These are deliberately mock implementations: they demonstrate the RBAC +
- * audit boundary without needing real external API credentials. Each tool logs
- * its call (for the audit trail) and returns a deterministic result.
+ * Replaces the old mock-only `tools.js`. Each adapter is feature-flagged: it
+ * uses real integrations when creds are present, otherwise falls back to a mock
+ * so the demo keeps working with no external accounts.
  *
- * In production these would be real integrations (calendar, email, CRM lookup);
- * the security boundary (schema validation + RBAC) is what matters here, and
- * that is real.
+ * Public contract with actorAgent.js is unchanged:
+ *   callTool(name, args) -> { tool, ok, result|error }
  */
+import { notify, config as notifyCfg } from "./tools/notify.js";
+import { lookup, config as lookupCfg } from "./tools/lookup.js";
+import { summarize, config as summarizeCfg } from "./tools/summarize.js";
+import { registerRateLimit, recordCall, auditTrail } from "./tools/_audit.js";
 
-const TOOLS = {
-  /**
-   * lookup(query) — pretend knowledge-base lookup.
-   * Returns a short canned fact so the demo flow has something concrete.
-   */
-  lookup: async ({ query }) => {
-    return {
-      tool: "lookup",
-      ok: true,
-      result: `Lookup for "${String(query).slice(0, 60)}": found 1 record (mock KB).`,
-    };
-  },
-
-  /**
-   * summarize(topic) — produce a short summary marker (mock; the real summary
-   * came from the Reader — this tool just records the action).
-   */
-  summarize: async ({ topic }) => {
-    return {
-      tool: "summarize",
-      ok: true,
-      result: `Summary of "${String(topic).slice(0, 60)}" recorded.`,
-    };
-  },
-
-  /**
-   * notify({message, channel}) — mock notification dispatch.
-   * Demonstrates a "side-effecting" action under RBAC.
-   */
-  notify: async ({ message, channel = "dashboard" }) => {
-    return {
-      tool: "notify",
-      ok: true,
-      result: `Notification sent on ${channel}: ${String(message).slice(0, 60)}`,
-    };
-  },
+const ADAPTERS = {
+  notify,
+  lookup,
+  summarize,
 };
 
+// Register per-tool rate limits.
+registerRateLimit("notify", notifyCfg.rateLimit);
+registerRateLimit("lookup", lookupCfg.rateLimit);
+registerRateLimit("summarize", summarizeCfg.rateLimit);
+
 /**
- * Execute a tool by name. Throws if the tool doesn't exist (caught by Actor).
+ * Execute a tool by name. Rate-limited + audited.
+ * RBAC + schema validation have ALREADY run in actorAgent.js before this.
  * @param {string} name
  * @param {object} args
  */
-async function callTool(name, args) {
-  const fn = TOOLS[name];
+export async function callTool(name, args) {
+  const fn = ADAPTERS[name];
   if (!fn) {
     return { tool: name, ok: false, error: `unknown tool: ${name}` };
   }
   try {
-    return await fn(args || {});
+    const result = await fn(args || {});
+    return { ...result, tool: result.tool || name, ok: result.ok !== false };
   } catch (err) {
-    return { tool: name, ok: false, error: String(err.message || err) };
+    const message = String(err.message || err);
+    // rate-limit violations surface distinctly so the actor can report them
+    if (message.startsWith("rate_limited")) {
+      return { tool: name, ok: false, error: message };
+    }
+    return { tool: name, ok: false, error: message };
   }
 }
 
 function toolNames() {
-  return Object.keys(TOOLS);
+  return Object.keys(ADAPTERS);
 }
 
-export { TOOLS, callTool, toolNames };
+export { auditTrail };

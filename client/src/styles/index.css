@@ -441,6 +441,48 @@ code, .mono { font-family: var(--mono); }
 .btn:active:not(:disabled) { transform: translateY(0); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.5); }
 
+/* Ghost button — used in the step-up modal for secondary actions. */
+.btn-ghost {
+  color: var(--cyan);
+  background: transparent;
+  border: 1px solid var(--panel-edge-hot);
+  box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled) { box-shadow: 0 0 18px rgba(0, 240, 255, 0.3); }
+
+/* ==========================================================================
+   Step-up MFA modal (Tier 2 EPIC B)
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 4, 10, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.modal {
+  width: min(440px, 92vw);
+  padding: 26px 28px;
+  background: var(--bg-2);
+  border: 1px solid var(--panel-edge-hot);
+  border-radius: 14px;
+  box-shadow: var(--glow-cyan), 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.stepup-modal h2 { margin: 0 0 10px; font-size: 18px; color: var(--text); }
+.stepup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.stepup-error {
+  margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+  color: var(--red); background: rgba(255, 56, 96, 0.1);
+  border: 1px solid rgba(255, 56, 96, 0.4); font-family: var(--mono); font-size: 12px;
+}
+.stepup-ok {
+  margin-top: 14px; color: var(--green); font-family: var(--mono); font-size: 12px;
+}
+
 /* ==========================================================================
    FEED / LISTS
    ========================================================================== */

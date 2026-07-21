@@ -7,25 +7,46 @@
  */
 import { useState } from "react";
 import { useKeystrokeCapture } from "../hooks/useKeystrokeCapture";
+import { apiFetch } from "../lib/api";
+import StepUpModal from "./StepUpModal";
 
 export default function ChatPanel({ userId }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [stepUp, setStepUp] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState(null);
   const { ref, trust } = useKeystrokeCapture({ userId, enabled: true });
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override) => {
+    const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy) return;
     setBusy(true);
-    setMessages((m) => [...m, { role: "user", text }]);
+    if (text !== pendingPrompt) setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, userId }),
-      });
+      const res = await apiFetch(
+        "/api/chat",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: text, userId }),
+        },
+        userId
+      );
+      // EPIC B: session frozen until a WebAuthn assertion clears step-up.
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({}));
+        if (body.reason === "step_up_required") {
+          setPendingPrompt(text);
+          setStepUp(true);
+          setMessages((m) => [
+            ...m,
+            { role: "system", text: "🔐 Step-up authentication required — verify your passkey to continue.", blocked: true },
+          ]);
+          return;
+        }
+      }
       // Guard: empty / non-JSON / non-OK responses (timeout, proxy drop, 500)
       // previously surfaced as "Unexpected end of JSON input". Handle cleanly.
       const textBody = await res.text();
@@ -57,10 +78,16 @@ export default function ChatPanel({ userId }) {
           },
         ]);
       } else if (data.error) {
-        setMessages((m) => [
-          ...m,
-          { role: "system", text: `⚠ ${data.error}: ${data.detail?.slice(0, 120) || ""}` },
-        ]);
+        // Friendly rendering of the common LLM timeout / connection errors.
+        const detail = String(data.detail || "");
+        const isTimeout = /timeout|aborted|ETIMEDOUT/i.test(detail);
+        const isUnreachable = /ECONNREFUSED|ENOTFOUND|fetch failed/i.test(detail);
+        const msg = isTimeout
+          ? `⏳ The LLM took too long to respond (timed out). Try again — the model is occasionally slow.`
+          : isUnreachable
+          ? `🌐 Could not reach the LLM provider (${data.error}). Check your network or API key.`
+          : `⚠ ${data.error}: ${detail.slice(0, 120) || "no detail"}`;
+        setMessages((m) => [...m, { role: "system", text: msg }]);
       } else {
         setMessages((m) => [
           ...m,
@@ -86,8 +113,23 @@ export default function ChatPanel({ userId }) {
     }
   };
 
+  // After a verified step-up assertion, close the modal and retry the prompt
+  // that was frozen.
+  const onStepUpVerified = () => {
+    setStepUp(false);
+    const retry = pendingPrompt;
+    setPendingPrompt(null);
+    setMessages((m) => [...m, { role: "system", text: "✓ Identity re-verified — resuming." }]);
+    if (retry) send(retry);
+  };
+
   return (
     <section className="panel chat-panel">
+      <StepUpModal
+        open={stepUp}
+        onVerified={onStepUpVerified}
+        onCancel={() => setStepUp(false)}
+      />
       <div className="panel-head">
         <h2>LLM Chat <small>(behind AI Firewall)</small></h2>
         <span className={`pill ${trust.cold_start ? "pill-warn" : trust.trust_score >= 70 ? "pill-ok" : "pill-bad"}`}>

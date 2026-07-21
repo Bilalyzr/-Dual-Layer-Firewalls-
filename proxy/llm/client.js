@@ -41,7 +41,12 @@ export function llmConfig() {
  * @returns {Promise<{content: string, raw: any, simulated?: boolean}>}
  */
 export async function chatCompletionMessages(messages, opts = {}) {
-  const { temperature = 0.4, maxTokens = 300, simulatedPrefix } = opts;
+  const {
+    temperature = 0.4,
+    maxTokens = 300,
+    simulatedPrefix,
+    timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10),
+  } = opts;
   if (!llmConfigured()) {
     const last = [...messages].reverse().find((m) => m.role === "user");
     return {
@@ -65,7 +70,7 @@ export async function chatCompletionMessages(messages, opts = {}) {
       temperature,
       max_tokens: maxTokens,
     }),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");

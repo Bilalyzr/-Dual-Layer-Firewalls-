@@ -12,6 +12,7 @@
  * Attach the returned `ref` to the input element you want to monitor.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 const BATCH_SIZE = 6;            // flush after this many events (responsive gauge)
 const FLUSH_MS = 1500;           // …or after this idle window (was 4s — felt laggy)
@@ -27,13 +28,13 @@ export function useKeystrokeCapture({ userId, enabled = true } = {}) {
 
   const flush = useCallback(async () => {
     if (events.current.length === 0) return;
-    const batch = events.current.splice(0, events.current.length);
+    const batch = events.current.splice(0, events.current.length).map((ev) => ({ d: ev.d, f: ev.f }));
     try {
-      const res = await fetch(API, {
+      const res = await apiFetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: userId || "anon", events: batch }),
-      });
+      }, userId);
       const body = await res.text();
       if (!body) return; // empty response (proxy down / timeout) — keep collecting
       let j;

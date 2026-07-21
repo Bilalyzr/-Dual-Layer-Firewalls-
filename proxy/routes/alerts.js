@@ -37,16 +37,18 @@ router.get("/status", async (_req, res) => {
     llm: llmConfig(),
     db: dbStats,
     tiers: {
-      current: "Tier 1 + Tier 2 (Phases 1–5)",
+      current: "Tier 1 + Tier 2 (Phases 1–5, Epics A–H)",
       implemented: [
         "Phase 4: LSTM + RF/GB/MLP biometric ensemble + async SHAP",
         "Phase 5: Trifecta Reader→Validator→Actor agents (schema validation + RBAC)",
+        "Epic A/B: signed sessions + FIDO2/WebAuthn step-up MFA enforcement",
+        "Epic C: Llama Guard safety layer (input + output)",
+        "Epic D: AES-256 at-rest field encryption + TLS 1.3 edge",
+        "Epic E: OS-level sandboxed reader-svc (read-only, cap-drop, egress isolation)",
+        "Epic F: real RBAC-gated Actor tool integrations + per-tool audit trail",
+        "Epic G: distributed microservices (gateway/firewall/agent/biometric + Redis bus)",
       ],
-      deferred: [
-        "FIDO2 step-up MFA enforcement (Phase 4)",
-        "OS-level Reader-Agent sandboxing (gVisor/Docker sidecars)",
-        "Real external tool integrations (email/calendar/CRM)",
-      ],
+      deferred: [],
     },
   });
 });

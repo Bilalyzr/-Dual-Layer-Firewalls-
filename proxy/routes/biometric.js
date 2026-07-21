@@ -13,15 +13,23 @@ import { Router } from "express";
 import { scoreBiometricBatch } from "../firewall/mlClient.js";
 import { getBaseline, upsertBaseline, insertBiometricEvent } from "../db/mongo.js";
 import { publish } from "../middleware/eventBus.js";
+import { shouldStepUp, requireStepUp } from "../auth/session.js";
 
 const router = Router();
 
 const MIN_SAMPLES = parseInt(process.env.BIOMETRIC_MIN_SAMPLES || "120", 10);
 const Z_THRESHOLD = parseFloat(process.env.BIOMETRIC_Z_THRESHOLD || "2.5");
 const MAX_HISTORY = 5000; // rolling window cap
+// Read enforce config per-request so SecOps can toggle without a restart.
+const bioMode = () => (process.env.BIOMETRIC_MODE || "shadow").toLowerCase();
+const stepUpThreshold = () => parseFloat(process.env.BIOMETRIC_STEPUP_THRESHOLD || "50");
 
 router.post("/batch", async (req, res) => {
-  const userId = req.body?.userId || "anon";
+  // Prefer the verified session identity (EPIC A); the sessionId is what the
+  // step-up enforcement hook (EPIC B) marks when trust collapses.
+  const session = req.session || null;
+  const userId = session?.userId || req.body?.userId || "anon";
+  const sessionId = session?.sessionId || null;
   // events: [{d, f}]  (dwell ms, flight ms; flight may be null/0 for first key)
   const events = Array.isArray(req.body?.events) ? req.body.events : [];
   const dwellTimes = events.map((e) => +e.d).filter((n) => Number.isFinite(n) && n > 0);
@@ -57,8 +65,37 @@ router.post("/batch", async (req, res) => {
     lastReason: engineResult.reason,
   });
 
+  // EPIC B enforcement hook: in enforce mode, when a known user's keystroke
+  // trust collapses below the step-up threshold, mark the session so /api/chat
+  // demands a fresh WebAuthn assertion, and alert the dashboard.
+  let stepUpRequired = false;
+  const STEPUP_THRESHOLD = stepUpThreshold();
+  if (
+    sessionId &&
+    shouldStepUp({
+      mode: bioMode(),
+      trustScore: engineResult.trust_score,
+      threshold: STEPUP_THRESHOLD,
+      coldStart: engineResult.cold_start,
+    })
+  ) {
+    await requireStepUp(sessionId, `trust ${Math.round(engineResult.trust_score)} <= ${STEPUP_THRESHOLD}`);
+    stepUpRequired = true;
+    publish("stepup", {
+      userId,
+      sessionId,
+      event: "step_up_required",
+      trust_score: engineResult.trust_score,
+      threshold: STEPUP_THRESHOLD,
+      reason: engineResult.reason,
+      ts: new Date(),
+    });
+    console.warn(`[biometric] ENFORCE STEP-UP required for ${userId} (trust=${Math.round(engineResult.trust_score)} <= ${STEPUP_THRESHOLD})`);
+  }
+
   const event = {
     userId,
+    sessionId,
     trust_score: engineResult.trust_score,
     risk_score: engineResult.risk_score,
     z: engineResult.z,
@@ -67,6 +104,7 @@ router.post("/batch", async (req, res) => {
     model_used: engineResult.model_used || "zscore",
     p_genuine: engineResult.p_genuine,
     shap_request_id: engineResult.shap_request_id,
+    stepUpRequired,
     batchSize: dwellTimes.length,
     baselineN: priorN,
     minSamples: MIN_SAMPLES,
@@ -75,7 +113,7 @@ router.post("/batch", async (req, res) => {
   await insertBiometricEvent(event);
   publish("biometric", event);
 
-  return res.json({ accepted: dwellTimes.length, ...engineResult, baselineN: priorN, minSamples: MIN_SAMPLES });
+  return res.json({ accepted: dwellTimes.length, ...engineResult, stepUpRequired, baselineN: priorN, minSamples: MIN_SAMPLES });
 });
 
 /** GET current baseline summary for a user (dashboard). */

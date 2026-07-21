@@ -1,0 +1,204 @@
+# =============================================================================
+# Unified Dual-Layer AI Firewall — DISTRIBUTED topology (Tier 2 · EPIC G)
+#
+# The default docker-compose.yml runs the proxy as a single container. This file
+# is the PRD §7 Tier-2 target: the proxy split into independently-deployable,
+# independently-scalable services, wired together by a Redis event bus.
+#
+#   gateway       public edge — sessions/auth, SSE, alerts; forwards the rest
+#   firewall-svc  Layer-1 pipeline (/api/chat, /api/inspect) — scale this out
+#   agent-svc     Trifecta Reader→Validator→Actor (internal only)
+#   biometric-svc Layer-2 keystroke scoring + SHAP + step-up enforcement
+#   reader-svc    sandboxed untrusted-content reader (EPIC E, hardened)
+#   redis         event bus (SSE fan-out across replicas)
+#   engine        Python classifier + biometric scoring (unchanged)
+#   mongo         shared persistence (unchanged)
+#   client        React dashboard (talks to the gateway)
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker-compose.micro.yml up --build
+#   docker compose -f docker-compose.micro.yml up --scale firewall-svc=3
+#   open http://localhost:8080
+# =============================================================================
+
+x-proxy-build: &proxy-build
+  build: ./proxy
+  restart: unless-stopped
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    engine:
+      condition: service_started
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost:4000/healthz"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+x-proxy-env: &proxy-env
+  MONGO_URI: mongodb://mongo:27017/firewall
+  ENGINE_URL: http://engine:8011
+  PROXY_PORT: "4000"
+  REDIS_URL: redis://redis:6379
+  EVENT_BUS_CHANNEL: firewall:events
+  LOG_FORMAT: ${LOG_FORMAT:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-session-secret-change-me}
+  APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+  FIREWALL_MODE: ${FIREWALL_MODE:-shadow}
+  FIREWALL_THRESHOLD: ${FIREWALL_THRESHOLD:-0.65}
+  ADVERSARIAL_SAMPLE_RATE: ${ADVERSARIAL_SAMPLE_RATE:-0.05}
+  BIOMETRIC_MODE: ${BIOMETRIC_MODE:-shadow}
+  BIOMETRIC_MIN_SAMPLES: ${BIOMETRIC_MIN_SAMPLES:-120}
+  BIOMETRIC_Z_THRESHOLD: ${BIOMETRIC_Z_THRESHOLD:-2.5}
+  BIOMETRIC_STEPUP_THRESHOLD: ${BIOMETRIC_STEPUP_THRESHOLD:-50}
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  engine:
+    build: ./engine
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      BIOMETRIC_MIN_SAMPLES: ${BIOMETRIC_MIN_SAMPLES:-120}
+      BIOMETRIC_Z_THRESHOLD: ${BIOMETRIC_Z_THRESHOLD:-2.5}
+
+  # ----- Public edge: the only service with a host port -----------------------
+  gateway:
+    <<: *proxy-build
+    command: ["node", "services/gateway.js"]
+    environment:
+      <<: *proxy-env
+      SERVICE_ROLE: gateway
+      SERVICE_NAME: gateway
+      FIREWALL_SVC_URL: http://firewall-svc:4000
+      BIOMETRIC_SVC_URL: http://biometric-svc:4000
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Dual-Layer AI Firewall}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:8080}
+    depends_on:
+      redis:
+        condition: service_healthy
+      firewall-svc:
+        condition: service_started
+      biometric-svc:
+        condition: service_started
+    # Reachable by the client's nginx (which upstreams to `proxy`) via this alias.
+    networks:
+      default:
+        aliases:
+          - proxy
+    ports:
+      - "4000:4000"
+
+  # ----- Layer-1 pipeline: scale this out (no host port so replicas can bind) --
+  firewall-svc:
+    <<: *proxy-build
+    command: ["node", "services/firewall-svc.js"]
+    environment:
+      <<: *proxy-env
+      SERVICE_ROLE: firewall
+      SERVICE_NAME: firewall-svc
+      AGENT_SVC_URL: http://agent-svc:4000
+      READER_SVC_URL: http://reader-svc:8012
+      LLAMAGUARD_ENABLED: ${LLAMAGUARD_ENABLED:-false}
+      LLAMAGUARD_URL: ${LLAMAGUARD_URL:-}
+      LLAMAGUARD_MODEL: ${LLAMAGUARD_MODEL:-meta-llama/llama-guard-4-12b}
+      LLAMAGUARD_API_KEY: ${LLAMAGUARD_API_KEY:-}
+    expose:
+      - "4000"
+
+  agent-svc:
+    <<: *proxy-build
+    command: ["node", "services/agent-svc.js"]
+    environment:
+      <<: *proxy-env
+      SERVICE_ROLE: agent
+      SERVICE_NAME: agent-svc
+      READER_SVC_URL: http://reader-svc:8012
+    expose:
+      - "4000"
+
+  biometric-svc:
+    <<: *proxy-build
+    command: ["node", "services/biometric-svc.js"]
+    environment:
+      <<: *proxy-env
+      SERVICE_ROLE: biometric
+      SERVICE_NAME: biometric-svc
+    expose:
+      - "4000"
+
+  # ----- Sandboxed reader (EPIC E) — hardened, isolated egress ----------------
+  reader-svc:
+    build:
+      context: .
+      dockerfile: reader-svc/Dockerfile
+    restart: unless-stopped
+    environment:
+      READER_PORT: "8012"
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "1001:1001"
+    expose:
+      - "8012"
+    networks:
+      - default
+      - reader_egress
+
+  client:
+    build:
+      context: ./client
+      args:
+        PROXY_URL: http://gateway:4000
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:
+
+networks:
+  # Mongo + engine live ONLY on `default`; reader-svc also joins `reader_egress`
+  # but those data services do not — so a compromised reader cannot open a socket
+  # to them (same isolation guarantee as the monolith compose, EPIC E).
+  reader_egress:
+    driver: bridge

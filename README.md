@@ -12,10 +12,11 @@ application and:
   continuously scores session trust against a per-user baseline (rolling-average
   z-score), with a cold-start MFA fallback.
 
-> Built from the two source documents in this folder. Tier 2 now adds the LSTM+ensemble
-> biometric engine, async SHAP explainability, and the LangGraph-style Trifecta
-> Reader→Validator→Actor agents. FIDO2 step-up MFA and OS-level agent sandboxing remain
-> deferred (see the bottom of this file).
+> Built from the two source documents in this folder. Tier 2 adds the LSTM+ensemble
+> biometric engine, async SHAP explainability, the LangGraph-style Trifecta
+> Reader→Validator→Actor agents, FIDO2 step-up MFA enforcement, Llama Guard, at-rest
+> encryption + TLS, the sandboxed reader service, real RBAC-gated tools, and the
+> distributed microservices split — Epics A–H (see the completion matrix below).
 
 ---
 
@@ -151,6 +152,25 @@ cd proxy && npm test
 
 ---
 
+## Tier 2 completion matrix
+
+| Epic | Capability | Status | Where |
+|---|---|---|---|
+| **A** | Signed sessions + identity foundation | ✅ | `proxy/auth/session.js`, `proxy/routes/session.js` |
+| **B** | FIDO2/WebAuthn step-up MFA enforcement | ✅ | `proxy/routes/auth.js`, `client/src/components/StepUpModal.jsx` |
+| **C** | Llama Guard 4 safety layer (input + output) | ✅ | `proxy/firewall/llamaGuard.js` |
+| **D** | AES-256 at-rest field encryption | ✅ | `proxy/db/encryption.js` (applied in `mongo.js`) |
+| **D** | TLS 1.3 in transit | ✅ | `edge/nginx.conf`, `scripts/gen-certs.sh`, `docker-compose.yml` (`--profile tls`) |
+| **E** | Reader-Agent OS-level sandbox service | ✅ | `reader-svc/`, hardened in `docker-compose.yml` (read_only, cap_drop, egress isolation) |
+| **F** | Real Actor tool integrations (RBAC-gated) | ✅ | `proxy/agents/tools/{notify,lookup,summarize}.js` (webhook/SMTP/KB, mock fallback) |
+| **F** | Per-tool rate limiting + audit trail | ✅ | `proxy/agents/tools/_audit.js` |
+| **H** | CI (engine + proxy + client) | ✅ | `.github/workflows/ci.yml` |
+| **G** | Distributed microservices (gateway/firewall/agent/biometric split + Redis bus) | ✅ | `proxy/app.js`, `proxy/services/*.js`, `proxy/middleware/eventBus.js`, `docker-compose.micro.yml` |
+
+**Total tests: 164** — engine (47: classifier + biometric + API + Tier-2 ensemble/SHAP/contract) + proxy (117: heuristics + output check + chat pipeline + agents + encryption + reader-sandbox + tool adapters + sessions + auth + llama guard + microservices split).
+
+---
+
 ## Requirement → component map
 
 | PRD Req | Where |
@@ -211,14 +231,30 @@ dual-layer-firewall/
 └── .env.example
 ```
 
-## Implemented in Tier 2 (Phases 4–5)
+## Distributed topology (Epic G)
 
-LSTM + RF/GB/MLP biometric ensemble · async SHAP explainability (`/api/shap`) ·
-Trifecta Reader→Validator→Actor agents with JSON-schema validation + RBAC
-(`proxy/agents/`).
+The default `docker compose up` runs the proxy as one container (the monolith). The
+same image also runs as four independently-scalable services wired by a Redis event
+bus — the PRD §7 Tier-2 target:
+
+```bash
+docker compose -f docker-compose.micro.yml up --build      # gateway + firewall/agent/biometric svc + redis
+docker compose -f docker-compose.micro.yml up --scale firewall-svc=3   # scale the CPU-bound Layer-1 out
+```
+
+- **gateway** — public edge: sessions/auth, SSE (served off the Redis bus), alerts/metrics; reverse-proxies the rest.
+- **firewall-svc** — Layer-1 pipeline (`/api/chat`, `/api/inspect`); stateless, scale-out.
+- **agent-svc** — Trifecta Reader→Validator→Actor (internal `/internal/agent/run`); firewall-svc delegates via `AGENT_SVC_URL`.
+- **biometric-svc** — keystroke scoring + SHAP + step-up enforcement.
+
+Every service exposes `GET /healthz` and a Prometheus `GET /metrics`, and emits
+structured JSON logs with a shared request id. All of it falls back to the
+in-process monolith when `REDIS_URL` / the service URLs are unset — so the single
+container and the whole test suite are unchanged. See `docs/TIER2_TODO.md` Epic G.
 
 ## What's still deliberately **not** here
 
-FIDO2 step-up MFA enforcement · OS-level Reader-Agent sandboxing (gVisor/Docker
-sidecars) · real external tool integrations (email/calendar/CRM) · Llama Guard 4.
-These are the remaining items surfaced under `deferred` in `/api/alerts/status`.
+Nothing from the Tier-2 backlog — Epics A–H are shipped and `/api/alerts/status`
+reports an empty `deferred[]`. Remaining hardening is production-deployment work
+(managed k8s manifests, an OTLP collector wired to the `/metrics` seam, a secret
+manager, and Let's Encrypt certs for the TLS edge).

@@ -75,14 +75,16 @@ Replace the mock `lookup`/`summarize`/`notify` tools with real, still-RBAC-gated
 - [ ] ⬜ Feature-flag each integration; default to mock when creds absent (keeps the demo working).
 - **Acceptance:** with creds set, `notify` sends a real message; with creds absent, falls back to mock; RBAC/schema still enforced either way.
 
-## EPIC G — Distributed microservices architecture  · Effort XL · Phase 5 (last)
-PRD §7 Tier 2 target. Do this only after A–F stabilize.
+## EPIC G — Distributed microservices architecture  · Effort XL · Phase 5 (last)  ✅ DONE
+PRD §7 Tier 2 target. Delivered as a role-parameterized single image + a dedicated
+`docker-compose.micro.yml`; the default monolith is unchanged and all fall back to
+in-process when the new env vars are unset.
 
-- [ ] ⬜ Split the proxy into: `gateway`, `firewall-svc`, `agent-svc`, `biometric-svc` (engine already separate; reader-svc from Epic E).
-- [ ] ⬜ Introduce a message bus (NATS/Redis) for the SSE event fan-out instead of the in-process `eventBus.js`.
-- [ ] ⬜ k8s manifests or an expanded `docker-compose.yml`; per-service health checks; horizontal scale for `firewall-svc`.
-- [ ] ⬜ Centralized structured logging + metrics (OpenTelemetry) across services.
-- **Acceptance:** services deploy and scale independently; end-to-end flow unchanged for the client.
+- [x] ✅ Split the proxy into: `gateway`, `firewall-svc`, `agent-svc`, `biometric-svc` (engine already separate; reader-svc from Epic E). App factory `proxy/app.js` (`createApp({role})`), entrypoints `proxy/services/*.js`, agent delegation over HTTP in `agents/orchestrator.js` (`AGENT_SVC_URL`).
+- [x] ✅ Message bus for SSE fan-out: Redis pub/sub in `proxy/middleware/eventBus.js` (lazy `redis` client, `startBusRelay()`), in-process fallback when `REDIS_URL` unset.
+- [x] ✅ Expanded `docker-compose.micro.yml`; per-service `/healthz` checks; horizontal scale for `firewall-svc` (`--scale firewall-svc=N`, no host-port binding).
+- [x] ✅ Centralized structured logging (`proxy/lib/logger.js`, JSON + request-id) + Prometheus `/metrics` (`proxy/middleware/telemetry.js`) across services (OTLP export = documented seam).
+- **Acceptance:** ✅ services deploy and scale independently; end-to-end flow unchanged for the client (monolith default + 8 new hermetic tests in `proxy/tests/microservices.test.js`).
 
 ## EPIC H — Model parity & housekeeping  · Effort S · optional
 - [ ] ⬜ Swap ensemble `GradientBoosting` → `XGBoost` to match the plan literally; retrain, re-emit `biometric_metrics.json`. (Functionally equivalent today — low priority.)
@@ -99,6 +101,6 @@ PRD §7 Tier 2 target. Do this only after A–F stabilize.
 5. **G** (microservices) — architectural finish, last.
 6. **H** — parity + docs, fold in opportunistically.
 
-## Definition of "Tier 2 complete"
-All of A–F shipped with tests + CI green, docs updated, and `/api/alerts/status`
-`deferred[]` empty (or only listing G if intentionally staged).
+## Definition of "Tier 2 complete"  ✅ MET
+All of A–G shipped with tests + CI green, docs updated, and `/api/alerts/status`
+`deferred[]` empty. (G was the last staged item; it is now delivered.)

@@ -38,6 +38,31 @@ export function isAgentic(prompt) {
  * @returns {Promise<{content:string, raw:any, simulated:boolean, agentTrace:object}>}
  */
 export async function runTrifecta({ prompt, userId, emit }) {
+  // EPIC G: in the distributed topology the firewall service delegates the
+  // Trifecta to a dedicated agent-svc over HTTP (mirrors the reader-svc split in
+  // EPIC E). Falls back to running in-process when AGENT_SVC_URL is unset — the
+  // monolith and the test suite. The `SERVICE_ROLE === "agent"` guard prevents
+  // agent-svc from recursively re-delegating to itself.
+  const svcUrl = process.env.AGENT_SVC_URL;
+  if (svcUrl && process.env.SERVICE_ROLE !== "agent") {
+    try {
+      const r = await fetch(svcUrl.replace(/\/$/, "") + "/internal/agent/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt, userId }),
+      });
+      if (r.ok) {
+        emit?.({ stage: "delegated", via: "agent-svc" });
+        return await r.json();
+      }
+      emit?.({ stage: "agent-svc:degraded", status: r.status });
+      // Non-2xx → fall through to in-process so a flaky agent-svc never breaks chat.
+    } catch (err) {
+      emit?.({ stage: "agent-svc:error", error: String(err.message || err) });
+      // Unreachable → fall through to in-process.
+    }
+  }
+
   const trace = {
     userId: userId || "anon",
     promptPreview: String(prompt).slice(0, 160),
