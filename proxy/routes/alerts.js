@@ -6,6 +6,7 @@ import { Router } from "express";
 import { recentAlerts, sampleCount, stats } from "../db/mongo.js";
 import { engineHealth } from "../firewall/mlClient.js";
 import { llmConfig } from "../llm/client.js";
+import { strictReal } from "../lib/strict.js";
 
 const router = Router();
 
@@ -35,6 +36,22 @@ router.get("/status", async (_req, res) => {
     },
     engine: { up: engineUp },
     llm: llmConfig(),
+    // Real-time posture: which subsystems run on a REAL backend vs. are
+    // unconfigured. In strict mode unconfigured backends fail loudly instead of
+    // returning simulated/mock output.
+    realtime: {
+      strictReal: strictReal(),
+      backends: {
+        llm: llmConfig().configured ? "real" : "unconfigured",
+        engine: engineUp ? "real" : "down",
+        llamaGuard:
+          String(process.env.LLAMAGUARD_ENABLED || "false").toLowerCase() === "true"
+            ? "real"
+            : "disabled",
+        notify: process.env.NOTIFY_WEBHOOK_URL || process.env.NOTIFY_SMTP_URL ? "real" : "unconfigured",
+        lookup: process.env.LOOKUP_API_URL ? "real" : "unconfigured",
+      },
+    },
     db: dbStats,
     tiers: {
       current: "Tier 1 + Tier 2 (Phases 1–5, Epics A–H)",

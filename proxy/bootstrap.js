@@ -12,6 +12,7 @@ import { connect } from "./db/mongo.js";
 import { startBusRelay, busMode } from "./middleware/eventBus.js";
 import { log } from "./lib/logger.js";
 import { llmConfig } from "./llm/client.js";
+import { strictReal } from "./lib/strict.js";
 
 export async function startService(role = "all") {
   // Set at runtime so the orchestrator's recursion guard + the logger/telemetry
@@ -24,6 +25,15 @@ export async function startService(role = "all") {
 
   await connect();
   await startBusRelay();
+
+  // Real-only posture check: warn loudly if strict mode is on but the LLM is not
+  // configured — chat/agent calls will hard-fail (by design) until a key is set.
+  if (strictReal() && !llmConfig().configured) {
+    log.warn(
+      "STRICT_REAL is on but the LLM is not configured — chat/agent requests will return errors " +
+        "until LLM_API_KEY is set (or set STRICT_REAL=false to allow the offline demo fallback)."
+    );
+  }
 
   return new Promise((resolve) => {
     const server = app.listen(PORT, () => {

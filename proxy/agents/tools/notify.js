@@ -14,6 +14,8 @@
  * works with Slack/Discord/any incoming-webhook receiver.
  */
 import { LOG, recordCall } from "./_audit.js";
+import { sendSmtp } from "./_smtp.js";
+import { strictReal } from "../../lib/strict.js";
 
 /**
  * @param {{message:string, channel?:"email"|"sms"|"dashboard"}} args
@@ -44,23 +46,45 @@ export async function notify(args) {
     }
   }
 
-  // SMTP mode — real email via raw socket. Enable by setting NOTIFY_SMTP_URL=
-  // smtp://user:pass@smtp.gmail.com:587 (we use the URL parser; STARTTLS omitted
-  // for brevity — this demonstrates the adapter boundary, not a hardened MTA).
+  // SMTP mode — REAL email via a built-in net/tls SMTP client (no mail dep).
+  // Enable with NOTIFY_SMTP_URL=smtps://user:pass@smtp.gmail.com:465 (implicit
+  // TLS) or smtp://user:pass@host:587 (STARTTLS). Recipient/sender via
+  // NOTIFY_EMAIL_TO / NOTIFY_EMAIL_FROM.
   const smtpUrl = process.env.NOTIFY_SMTP_URL;
   if (smtpUrl) {
-    // Mock the actual send (a real impl would use nodemailer; we don't add the
-    // dep). The point: this branch proves the adapter WOULD send a real email
-    // when configured, gated behind the same RBAC/schema/rate-limit envelope.
+    const to = process.env.NOTIFY_EMAIL_TO;
+    const from = process.env.NOTIFY_EMAIL_FROM || to;
+    if (!to) {
+      return { tool: "notify", ok: false, mode: "smtp", result: "NOTIFY_SMTP_URL set but NOTIFY_EMAIL_TO missing." };
+    }
+    try {
+      const sent = await sendSmtp({
+        url: smtpUrl,
+        from,
+        to,
+        subject: `[Firewall notify] ${channel}`,
+        body: message,
+      });
+      return { tool: "notify", ok: true, mode: "smtp", result: `Email sent to ${to} via ${sent.host}:${sent.port}.` };
+    } catch (err) {
+      LOG.warn("[tools.notify] smtp send failed:", err.message);
+      return { tool: "notify", ok: false, mode: "smtp", result: `SMTP send failed: ${err.message}` };
+    }
+  }
+
+  // STRICT_REAL: no real channel configured → fail loudly, never fake a send.
+  if (strictReal()) {
     return {
       tool: "notify",
-      ok: true,
-      mode: "smtp",
-      result: `Email queued via ${new URL(smtpUrl).host} (channel=${channel}).`,
+      ok: false,
+      mode: "unconfigured",
+      result:
+        "notify has no real channel configured (STRICT_REAL). Set NOTIFY_WEBHOOK_URL or NOTIFY_SMTP_URL, " +
+        "or STRICT_REAL=false to allow the demo mock.",
     };
   }
 
-  // Mock fallback — default when no creds configured.
+  // Mock fallback — demo mode only (STRICT_REAL=false).
   return {
     tool: "notify",
     ok: true,

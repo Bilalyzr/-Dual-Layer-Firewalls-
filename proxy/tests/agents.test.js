@@ -30,6 +30,9 @@ import { chatCompletionMessages } from "../llm/client.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // These exercise tool execution through the demo mock fallbacks, which are
+  // opt-in now that strict real-only mode is the default.
+  process.env.STRICT_REAL = "false";
 });
 
 // ===========================================================================

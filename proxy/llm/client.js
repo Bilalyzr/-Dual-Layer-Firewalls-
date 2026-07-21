@@ -5,6 +5,7 @@
  * server — anything that speaks the /v1/chat/completions contract. Configured
  * entirely via env (see .env.example).
  */
+import { strictReal } from "../lib/strict.js";
 
 // Read env lazily (at call time) rather than caching at module load, so the
 // config is correct regardless of import ordering vs. dotenv, and so tests can
@@ -29,6 +30,7 @@ export function llmConfig() {
     model: model(),
     hasKey: Boolean(apiKey()),
     configured: llmConfigured(),
+    strictReal: strictReal(),
   };
 }
 
@@ -48,6 +50,14 @@ export async function chatCompletionMessages(messages, opts = {}) {
     timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "45000", 10),
   } = opts;
   if (!llmConfigured()) {
+    // STRICT_REAL (default): never return fabricated text — fail loudly so the
+    // caller surfaces a real error instead of a silent simulation.
+    if (strictReal()) {
+      throw new Error(
+        "LLM_NOT_CONFIGURED: STRICT_REAL is on — refusing to return simulated output. " +
+          "Set LLM_API_KEY (+ LLM_BASE_URL/LLM_MODEL), or set STRICT_REAL=false to allow the offline demo fallback."
+      );
+    }
     const last = [...messages].reverse().find((m) => m.role === "user");
     return {
       content:

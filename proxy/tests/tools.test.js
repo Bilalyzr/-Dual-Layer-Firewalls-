@@ -12,6 +12,9 @@ import { _resetForTests } from "../agents/tools/_audit.js";
 
 beforeEach(() => {
   _resetForTests();
+  // These tests exercise the DEMO mock fallbacks, which are opt-in now that
+  // strict real-only mode is the default. STRICT_REAL=false re-enables them.
+  process.env.STRICT_REAL = "false";
   // Clear all credential env vars — mock fallback by default
   for (const k of ["NOTIFY_WEBHOOK_URL", "NOTIFY_SMTP_URL", "LOOKUP_API_URL", "LOOKUP_API_KEY", "SUMMARY_INDEX_URL"]) {
     delete process.env[k];

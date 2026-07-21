@@ -11,6 +11,7 @@
  * @returns {Promise<{tool:string, ok:boolean, result:string, mode:string}>}
  */
 import { LOG, recordCall } from "./_audit.js";
+import { strictReal } from "../../lib/strict.js";
 
 export async function lookup(args) {
   const query = String(args?.query || "").slice(0, 120);
@@ -39,7 +40,17 @@ export async function lookup(args) {
     }
   }
 
-  // Mock fallback.
+  // STRICT_REAL: no KB configured → fail loudly, never fabricate a hit.
+  if (strictReal()) {
+    return {
+      tool: "lookup",
+      ok: false,
+      mode: "unconfigured",
+      result: "lookup has no knowledge base configured (STRICT_REAL). Set LOOKUP_API_URL, or STRICT_REAL=false for the demo mock.",
+    };
+  }
+
+  // Mock fallback — demo mode only (STRICT_REAL=false).
   return {
     tool: "lookup",
     ok: true,
