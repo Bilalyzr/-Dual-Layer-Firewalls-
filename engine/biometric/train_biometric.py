@@ -12,6 +12,7 @@ Run:  python -m engine.biometric.train_biometric
 """
 from __future__ import annotations
 import json
+import random
 from pathlib import Path
 
 import joblib
@@ -36,14 +37,30 @@ from .generate_keystrokes import build_dataset
 EPOCHS = 15
 BATCH = 64
 LR = 3e-3
+SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def _iterate_minibatches(*arrays, batch_size: int, shuffle: bool = True):
+def _seed_everything(seed: int = SEED) -> None:
+    """Make training reproducible across runs.
+
+    Without this the LSTM weight init, the Adam updates, and the minibatch
+    shuffle all draw from un-seeded global RNGs, so each training run produces a
+    slightly different model. The Tier-2 discrimination margin then varies
+    run-to-run and the genuine-vs-impostor tests flake in CI. Seeding every RNG
+    the pipeline touches pins the model — and the margin — deterministically.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+def _iterate_minibatches(*arrays, batch_size: int, shuffle: bool = True, rng=None):
     n = arrays[0].shape[0]
     idx = np.arange(n)
     if shuffle:
-        np.random.shuffle(idx)
+        (rng or np.random).shuffle(idx)
     for start in range(0, n, batch_size):
         sl = idx[start : start + batch_size]
         yield tuple(a[sl] for a in arrays)
@@ -82,6 +99,7 @@ def train_lstm(X_train, y_train, X_test, y_test) -> KeystrokeLSTM:
 
 
 def main() -> dict:
+    _seed_everything()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     print("[biometric] generating synthetic keystroke dataset...")
