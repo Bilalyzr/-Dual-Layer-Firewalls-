@@ -1,6 +1,6 @@
 """
 Train the Tier-2 biometric model: LSTM (feature extractor) + soft-voting
-ensemble (RF + GB + MLP). Persists artifacts to engine/models/.
+ensemble (RF + XGBoost + MLP). Persists artifacts to engine/models/.
 
 Two-stage training:
   Stage 1 — train the LSTM as an impostor classifier. With deviation-aware
@@ -128,7 +128,7 @@ def main() -> dict:
     joblib.dump(stats_scaler, STATS_NORM_PATH)
 
     # ---- Stage 2: ensemble on embeddings + stats -------------------------
-    print("[biometric] stage 2: training RF+GB+MLP ensemble...")
+    print("[biometric] stage 2: training RF+XGBoost+MLP ensemble...")
     import engine.biometric.lstm_model as L
     L._model = None  # reload singleton with fresh weights
 

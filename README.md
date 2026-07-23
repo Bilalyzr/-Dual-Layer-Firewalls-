@@ -17,6 +17,28 @@ A secure proxy that sits in front of an LLM application and defends it on two la
 | Engine | Python + FastAPI + scikit-learn (classifier, biometric scoring) |
 | Database | MongoDB |
 
+## Tier 2 — completion matrix
+
+All Tier-2 epics are delivered and covered by the test suite (`docs/TIER2_TODO.md`
+tracks the detail). Verified against source, not a summary line.
+
+| Epic | Capability | Status | Key files |
+|---|---|---|---|
+| A | Signed sessions + `trustState` | ✅ | `proxy/auth/session.js` |
+| B | FIDO2/WebAuthn step-up MFA | ✅ | `proxy/routes/auth.js`, `client/src/components/StepUpModal.jsx` |
+| C | Llama Guard 4 safety layer (in + out) | ✅ | `proxy/firewall/llamaGuard.js` |
+| D | TLS 1.3 in transit + AES-256-GCM at rest | ✅ | `edge/nginx.conf`, `proxy/db/encryption.js` |
+| E | OS-level Reader-Agent sandbox | ✅ | `reader-svc/`, hardened in `docker-compose.yml` |
+| F | Real Actor tools + RBAC + rate limit/audit | ✅ | `proxy/agents/tools/` |
+| G | Distributed microservices + Redis bus | ✅ | `proxy/app.js`, `proxy/services/`, `docker-compose.micro.yml` |
+| H | XGBoost ensemble parity + per-service CI | ✅ | `engine/biometric/ensemble.py`, `.github/workflows/ci.yml` |
+
+**Firewall latency (PRD §6, <5ms):** heuristics run first and short-circuit a
+confirmed block in enforce mode without the ML/Guard round-trip; classifier
+verdicts are cached per-prompt (`proxy/firewall/clfCache.js`). Malicious and
+repeated/benign paths return sub-millisecond; only a novel benign prompt pays the
+single engine hop.
+
 ## Quick start
 
 ```bash

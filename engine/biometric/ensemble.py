@@ -1,11 +1,15 @@
 """
 Soft-voting ensemble for keystroke impostor detection (Req 3.3).
 
-RandomForest + GradientBoosting (XGBoost-equivalent without the extra dep) +
-MLP, averaged via VotingClassifier(voting='soft'). Input: LSTM embeddings (16d)
-concatenated with hand-crafted stats (17d) = 33 features. Output: P(genuine).
+RandomForest + XGBoost + MLP, averaged via VotingClassifier(voting='soft').
+Input: LSTM embeddings (16d) concatenated with hand-crafted stats = 35 features.
+Output: P(genuine).
 
 Label convention (matches generate_keystrokes): 1 = genuine, 0 = impostor.
+
+Note: SHAP explainability (explain.py) attributes to the RandomForest member via
+TreeExplainer, so the gradient-boosting choice (XGBoost vs sklearn GB) does not
+affect explanations.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -13,11 +17,11 @@ from pathlib import Path
 import joblib
 import numpy as np
 from sklearn.ensemble import (
-    GradientBoostingClassifier,
     RandomForestClassifier,
     VotingClassifier,
 )
 from sklearn.neural_network import MLPClassifier
+from xgboost import XGBClassifier
 
 from .lstm_model import EMBED_DIM
 from .features import FEATURE_NAMES
@@ -33,8 +37,20 @@ def build_ensemble(random_state: int = 42) -> VotingClassifier:
     rf = RandomForestClassifier(
         n_estimators=120, max_depth=8, random_state=random_state, class_weight="balanced"
     )
-    gb = GradientBoostingClassifier(
-        n_estimators=120, max_depth=3, learning_rate=0.1, random_state=random_state
+    # XGBoost gradient-boosted trees. Pinned to single-thread deterministic
+    # training (n_jobs=1, fixed seed) so the Tier-2 discrimination margin is
+    # reproducible run-to-run and CI stays stable — matching train_biometric's
+    # _seed_everything intent.
+    xgb = XGBClassifier(
+        n_estimators=120,
+        max_depth=3,
+        learning_rate=0.1,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        random_state=random_state,
+        n_jobs=1,
+        tree_method="hist",
+        eval_metric="logloss",
     )
     mlp = MLPClassifier(
         hidden_layer_sizes=(32,),
@@ -43,7 +59,7 @@ def build_ensemble(random_state: int = 42) -> VotingClassifier:
         random_state=random_state,
     )
     return VotingClassifier(
-        estimators=[("rf", rf), ("gb", gb), ("mlp", mlp)],
+        estimators=[("rf", rf), ("xgb", xgb), ("mlp", mlp)],
         voting="soft",
         weights=[1.0, 1.0, 0.7],
         n_jobs=None,

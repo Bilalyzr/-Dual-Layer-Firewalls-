@@ -10,3 +10,4 @@ pytest==8.3.4
 # Tier 2 (Phase 4): biometric LSTM + ensemble + SHAP
 torch==2.13.0
 shap==0.51.0
+xgboost==2.1.4

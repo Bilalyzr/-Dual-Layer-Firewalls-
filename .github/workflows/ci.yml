@@ -59,18 +59,55 @@ jobs:
         working-directory: proxy
       - name: Validate distributed compose file
         run: docker compose -f docker-compose.micro.yml config -q
-      - name: Boot a split service and probe /healthz + /metrics
+      - name: Boot each split service and probe /healthz + /metrics
         working-directory: proxy
         run: |
-          PROXY_PORT=4090 node services/firewall-svc.js &
-          SVC=$!
+          set -e
+          # role -> port. Each role must expose a uniform /healthz + /metrics
+          # surface (mountTelemetry) and own the correct role label.
+          declare -A SVC=( [firewall]=4090 [agent]=4091 [biometric]=4092 )
+          for role in "${!SVC[@]}"; do
+            port=${SVC[$role]}
+            PROXY_PORT=$port node services/${role}-svc.js &
+            pid=$!
+            for i in $(seq 1 20); do
+              curl -sf http://127.0.0.1:$port/healthz && break
+              sleep 0.5
+            done
+            echo "== probing $role on :$port =="
+            curl -sf http://127.0.0.1:$port/healthz | grep -q "\"role\":\"$role\""
+            curl -sf http://127.0.0.1:$port/metrics | grep -q 'service_up'
+            kill $pid
+          done
+
+  reader-svc:
+    name: Reader-svc (Epic E) sandbox smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install proxy deps (reader-svc shares the Reader agent source)
+        run: npm ci
+        working-directory: proxy
+      - name: Install reader-svc deps
+        run: npm install
+        working-directory: reader-svc
+      - name: Boot the sandboxed reader-svc and probe /health + no-tools guarantee
+        working-directory: reader-svc
+        run: |
+          set -e
+          READER_PORT=8092 node server.js &
+          pid=$!
           for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:4090/healthz && break
+            curl -sf http://127.0.0.1:8092/health && break
             sleep 0.5
           done
-          curl -sf http://127.0.0.1:4090/healthz | grep -q '"role":"firewall"'
-          curl -sf http://127.0.0.1:4090/metrics | grep -q 'service_up'
-          kill $SVC
+          curl -sf http://127.0.0.1:8092/health | grep -q '"status":"ok"'
+          # The core Trifecta guarantee: a reader exposes ZERO tools.
+          curl -sf http://127.0.0.1:8092/ | grep -q '"tools":\[\]'
+          kill $pid
 
   client:
     name: Client (Vite) build

@@ -12,6 +12,7 @@
 import { Router } from "express";
 import { runHeuristics, OWASP_TITLES } from "../firewall/heuristics.js";
 import { classifyPrompt } from "../firewall/mlClient.js";
+import { getCached, setCached } from "../firewall/clfCache.js";
 import { checkOutput } from "../firewall/outputCheck.js";
 import { moderateContent } from "../firewall/llamaGuard.js";
 import { chatCompletion } from "../llm/client.js";
@@ -73,10 +74,59 @@ router.post("/", async (req, res) => {
   const THRESHOLD = threshold();
   const SAMPLE_RATE = sampleRate();
 
-  // 1.2 + 1.3 + EPIC C — heuristic + ML + Llama Guard safety model, in parallel.
-  const [heuristic, classification, guardInput] = await Promise.all([
-    runHeuristics(prompt),
-    classifyPrompt(prompt),
+  // 1.2 heuristic scan first — local & sub-millisecond. A confirmed heuristic hit
+  // in enforce mode lets us BLOCK immediately without paying the ML + Llama Guard
+  // network round-trips, keeping the firewall path under the <5ms PRD target.
+  const heuristic = await runHeuristics(prompt);
+  if (heuristic.matched && MODE === "enforce") {
+    const sig = heuristic.signals[0] || {};
+    const category = sig.category || "LLM01";
+    const label = sig.label || "prompt injection";
+    const alert = {
+      userId,
+      sessionId,
+      kind: "heuristic",
+      category,
+      categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      label,
+      prompt: mask(prompt),
+      threatProbability: null,
+      mode: MODE,
+      blocked: true,
+      ts: new Date(),
+    };
+    await insertAlert(alert);
+    publish("threat", alert);
+    console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
+    return res.json({
+      blocked: true,
+      reason: "blocked by AI firewall",
+      category,
+      categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      verdict: {
+        mode: MODE,
+        threshold: THRESHOLD,
+        heuristic: { matched: true, signals: heuristic.signals, latencyMs: heuristic.latencyMs },
+        classifier: { skipped: true, reason: "heuristic short-circuit" },
+        llamaGuard: { skipped: true, reason: "heuristic short-circuit" },
+        threat: true,
+        category,
+        shortCircuit: true,
+      },
+      latencyMs: +(performance.now() - t0).toFixed(2),
+    });
+  }
+
+  // 1.3 + EPIC C — ML classification (cached per-prompt, Tier-3 §12.8) + Llama
+  // Guard, in parallel. A cache hit skips the engine round-trip entirely.
+  const cachedClf = getCached(prompt);
+  const [classification, guardInput] = await Promise.all([
+    cachedClf
+      ? Promise.resolve(cachedClf)
+      : classifyPrompt(prompt).then((c) => {
+          if (c.ready !== false) setCached(prompt, c); // only cache real verdicts
+          return c;
+        }),
     moderateContent({ text: prompt, role: "user" }),
   ]);
 
