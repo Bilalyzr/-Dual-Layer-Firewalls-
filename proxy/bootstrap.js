@@ -10,6 +10,8 @@ import "./config/env.js";
 import { createApp } from "./app.js";
 import { connect } from "./db/mongo.js";
 import { startBusRelay, busMode } from "./middleware/eventBus.js";
+import { connectStore, storeMode } from "./lib/store.js";
+import { hydrateBans } from "./response/banStore.js";
 import { log } from "./lib/logger.js";
 import { llmConfig } from "./llm/client.js";
 import { strictReal } from "./lib/strict.js";
@@ -25,6 +27,8 @@ export async function startService(role = "all") {
 
   await connect();
   await startBusRelay();
+  await connectStore(); // Tier-3 Redis command client (reputation cache + ip guard)
+  await hydrateBans(); // load persisted CIDR bans into the in-memory guard index
 
   // Real-only posture check: warn loudly if strict mode is on but the LLM is not
   // configured — chat/agent calls will hard-fail (by design) until a key is set.
@@ -41,6 +45,7 @@ export async function startService(role = "all") {
         role,
         port: PORT,
         bus: busMode(),
+        store: storeMode(),
         firewall: (process.env.FIREWALL_MODE || "shadow").toLowerCase(),
         biometric: (process.env.BIOMETRIC_MODE || "shadow").toLowerCase(),
         llmConfigured: llmConfig().configured,

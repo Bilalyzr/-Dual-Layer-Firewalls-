@@ -16,7 +16,8 @@ Priority: 🔴 high · 🟡 medium · 🟢 low
 
 ---
 
-# WAVE 1 — IP Forensics & Automated Threat Response  🔴
+# WAVE 1 — IP Forensics & Automated Threat Response  🔴\
+
 *The user-requested capability (§12.1). Everything network-level depends on Epic A.*
 
 ## EPIC A — IP context foundation  · Effort M · 🔴 · (prereq for B, C, D, E)

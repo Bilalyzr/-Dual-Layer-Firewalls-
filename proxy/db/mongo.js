@@ -14,6 +14,7 @@
  * on /metrics so the operator can see persistence is degraded.
  */
 import { MongoClient } from "mongodb";
+import crypto from "node:crypto";
 
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI_LOCAL || "mongodb://localhost:27017/firewall";
 
@@ -48,6 +49,7 @@ export async function connect() {
     db = client.db();
     await Promise.all([
       db.collection("alerts").createIndex({ ts: -1 }),
+      db.collection("alerts").createIndex({ alertId: 1 }, { sparse: true }),
       db.collection("samples").createIndex({ ts: -1 }),
       db.collection("baselines").createIndex({ userId: 1 }, { unique: true }),
       db.collection("biometric_events").createIndex({ ts: -1 }),
@@ -70,7 +72,10 @@ export function isPersistent() {
 
 // ---- Alerts (firewall) --------------------------------------------------- //
 export async function insertAlert(doc) {
-  const full = { ts: new Date(), ...encryptFields(doc, SENSITIVE_ALERT_FIELDS) };
+  // Assign a stable id so out-of-band enrichment (Tier-3 Epic B) can patch the
+  // exact stored alert later, independent of Mongo's _id / the in-mem copy.
+  const alertId = doc.alertId || crypto.randomUUID();
+  const full = { ts: new Date(), alertId, ...encryptFields(doc, SENSITIVE_ALERT_FIELDS) };
   if (connected) await db.collection("alerts").insertOne(full);
   mem.alerts.unshift(full);
   mem.alerts = mem.alerts.slice(0, 500);
@@ -82,6 +87,25 @@ export async function recentAlerts(limit = 50) {
     ? await db.collection("alerts").find().sort({ ts: -1 }).limit(limit).toArray()
     : mem.alerts.slice(0, limit);
   return rows.map((r) => decryptFields(r, SENSITIVE_ALERT_FIELDS));
+}
+
+/**
+ * Patch the `forensics.enrichment` branch of a stored alert (Tier-3 Epic B).
+ * Runs post-response, off the request path. No-op if the alert isn't found.
+ */
+export async function patchAlertForensics(alertId, enrichment) {
+  if (!alertId) return null;
+  if (connected) {
+    await db.collection("alerts").updateOne(
+      { alertId },
+      { $set: { "forensics.enrichment": enrichment, "forensics.enrichedAt": new Date() } }
+    );
+  }
+  const row = mem.alerts.find((a) => a.alertId === alertId);
+  if (row) {
+    row.forensics = { ...(row.forensics || {}), enrichment, enrichedAt: new Date() };
+  }
+  return row || null;
 }
 
 // ---- Low-confidence samples (Req 1.5) ------------------------------------ //

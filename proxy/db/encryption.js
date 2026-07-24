@@ -22,7 +22,17 @@ const PREFIX = "enc:v1:";
 
 // Fields that carry sensitive content (prompts, biometric timing, reasoning).
 // Indexed/metadata fields (userId, ts, category, mode, blocked) stay plaintext.
-export const SENSITIVE_ALERT_FIELDS = ["prompt", "label", "reasons", "snippets"];
+// Dotted paths (e.g. "forensics.clientIp") encrypt a nested value in place —
+// Tier-3 Epic A keeps the source IP (PII) encrypted at rest like a prompt.
+export const SENSITIVE_ALERT_FIELDS = [
+  "prompt",
+  "label",
+  "reasons",
+  "snippets",
+  "forensics.clientIp",
+  "forensics.realIp",
+  "forensics.proxyChain",
+];
 export const SENSITIVE_SAMPLE_FIELDS = ["prompt"];
 export const SENSITIVE_BASELINE_FIELDS = ["dwellHistory", "flightHistory"];
 
@@ -89,34 +99,46 @@ export function decryptString(enc) {
   }
 }
 
+// Transform a string or array-of-strings value with `fn`; leaves other types be.
+function mapValue(v, fn) {
+  if (typeof v === "string") return fn(v);
+  if (Array.isArray(v)) return v.map((x) => (typeof x === "string" ? fn(x) : x));
+  return v;
+}
+
+// Apply `fn` to `doc[path]`, supporting a single-level dotted path (a.b). Returns
+// a shallowly-cloned doc with only the touched branch copied, so callers keep
+// getting an immutable-ish result. Missing intermediate objects are skipped.
+function transformPath(doc, path, fn) {
+  const dot = path.indexOf(".");
+  if (dot === -1) {
+    if (!(path in doc)) return doc;
+    return { ...doc, [path]: mapValue(doc[path], fn) };
+  }
+  const head = path.slice(0, dot);
+  const rest = path.slice(dot + 1);
+  const child = doc[head];
+  if (!child || typeof child !== "object" || Array.isArray(child)) return doc;
+  if (!(rest in child)) return doc;
+  return { ...doc, [head]: { ...child, [rest]: mapValue(child[rest], fn) } };
+}
+
 /**
  * Encrypt configured sensitive fields on a doc (returns a shallow copy).
  * @param {object} doc
- * @param {string[]} fields  which keys to encrypt
+ * @param {string[]} fields  which keys to encrypt (supports one-level dotted paths)
  */
 export function encryptFields(doc, fields) {
   if (!doc || typeof doc !== "object" || !encryptionEnabled()) return doc;
-  const out = { ...doc };
-  for (const f of fields) {
-    if (f in out) {
-      const v = out[f];
-      if (typeof v === "string") out[f] = encryptString(v);
-      else if (Array.isArray(v)) out[f] = v.map((x) => (typeof x === "string" ? encryptString(x) : x));
-    }
-  }
-  return out;
+  let out = doc;
+  for (const f of fields) out = transformPath(out, f, encryptString);
+  return out === doc ? { ...doc } : out;
 }
 
 /** Decrypt configured sensitive fields on a doc (returns a shallow copy). */
 export function decryptFields(doc, fields) {
   if (!doc || typeof doc !== "object" || !encryptionEnabled()) return doc;
-  const out = { ...doc };
-  for (const f of fields) {
-    if (f in out) {
-      const v = out[f];
-      if (typeof v === "string") out[f] = decryptString(v);
-      else if (Array.isArray(v)) out[f] = v.map((x) => (typeof x === "string" ? decryptString(x) : x));
-    }
-  }
-  return out;
+  let out = doc;
+  for (const f of fields) out = transformPath(out, f, decryptString);
+  return out === doc ? { ...doc } : out;
 }

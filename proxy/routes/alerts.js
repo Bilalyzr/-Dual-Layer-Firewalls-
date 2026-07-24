@@ -7,6 +7,10 @@ import { recentAlerts, sampleCount, stats } from "../db/mongo.js";
 import { engineHealth } from "../firewall/mlClient.js";
 import { llmConfig } from "../llm/client.js";
 import { strictReal } from "../lib/strict.js";
+import { storeMode } from "../lib/store.js";
+import { ipForensicsEnabled } from "../middleware/ipContext.js";
+import { enrichmentEnabled } from "../forensics/enrich.js";
+import { responseMode, killSwitchEngaged } from "../response/banStore.js";
 
 const router = Router();
 
@@ -35,6 +39,20 @@ router.get("/status", async (_req, res) => {
       zThreshold: parseFloat(process.env.BIOMETRIC_Z_THRESHOLD || "2.5"),
     },
     engine: { up: engineUp },
+    // Tier-3 Wave 1: IP forensics + automated response posture.
+    forensics: {
+      ipForensics: ipForensicsEnabled(),
+      enrichment: enrichmentEnabled(),
+      store: storeMode(),
+      geoip: process.env.MAXMIND_DB_PATH ? "configured" : "unconfigured",
+      reputation: process.env.ABUSEIPDB_KEY || process.env.PROXYCHECK_KEY ? "configured" : "unconfigured",
+    },
+    response: {
+      mode: responseMode(),
+      killSwitch: killSwitchEngaged(),
+      autoBanThreshold: parseInt(process.env.AUTO_BAN_THRESHOLD || "5", 10),
+      autoBanWindowSec: parseInt(process.env.AUTO_BAN_WINDOW || "600", 10),
+    },
     llm: llmConfig(),
     // Real-time posture: which subsystems run on a REAL backend vs. are
     // unconfigured. In strict mode unconfigured backends fail loudly instead of
@@ -54,7 +72,7 @@ router.get("/status", async (_req, res) => {
     },
     db: dbStats,
     tiers: {
-      current: "Tier 1 + Tier 2 (Phases 1–5, Epics A–H)",
+      current: "Tier 1 + Tier 2 (Epics A–H) + Tier 3 Wave 1 (IP forensics & auto-response)",
       implemented: [
         "Phase 4: LSTM + RF/GB/MLP biometric ensemble + async SHAP",
         "Phase 5: Trifecta Reader→Validator→Actor agents (schema validation + RBAC)",
@@ -64,6 +82,9 @@ router.get("/status", async (_req, res) => {
         "Epic E: OS-level sandboxed reader-svc (read-only, cap-drop, egress isolation)",
         "Epic F: real RBAC-gated Actor tool integrations + per-tool audit trail",
         "Epic G: distributed microservices (gateway/firewall/agent/biometric + Redis bus)",
+        "Tier-3 A: trustworthy client-IP resolution + encrypted forensics sub-document",
+        "Tier-3 B: out-of-band GeoIP/ASN/reputation enrichment (cached, fail-open)",
+        "Tier-3 C: Redis-backed auto-ban engine (sliding window, /24 escalation, honeypot)",
       ],
       deferred: [],
     },

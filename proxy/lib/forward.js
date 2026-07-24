@@ -13,6 +13,12 @@ import { log } from "./logger.js";
 
 const PASS_THROUGH = ["authorization", "x-session-token", "content-type", "x-request-id"];
 
+// Internal header carrying the client IP the gateway already resolved against
+// TRUSTED_PROXIES (Epic A). Downstream services trust it because the gateway is
+// (by deployment) a trusted proxy in their own allow-list, so they don't re-walk
+// the forwarding chain per hop.
+const CLIENT_IP_HEADER = "x-client-ip";
+
 /**
  * @param {string} targetBase  e.g. "http://firewall-svc:4000"
  */
@@ -23,6 +29,10 @@ export function proxyTo(targetBase) {
     try {
       const headers = {};
       for (const h of PASS_THROUGH) if (req.headers[h]) headers[h] = req.headers[h];
+      // Forward the resolved client IP so the downstream service records the true
+      // origin instead of the gateway's own address.
+      const clientIp = req.ipContext?.clientIp;
+      if (clientIp) headers[CLIENT_IP_HEADER] = clientIp;
       const hasBody = !["GET", "HEAD"].includes(req.method);
       const body = hasBody ? JSON.stringify(req.body ?? {}) : undefined;
       if (hasBody && !headers["content-type"]) headers["content-type"] = "application/json";

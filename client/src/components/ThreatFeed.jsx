@@ -4,8 +4,21 @@
  * Events arrive via SSE (useThreatStream) and are tagged with their OWASP
  * LLM Top 10 category. A compact summary bar shows counts per category.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+
+/**
+ * Source IPs are PII, so the feed redacts them by default (Epic A). The reveal
+ * toggle is an operator action; even redacted we keep enough of the address to
+ * recognize a repeat offender (first + last octet for IPv4).
+ */
+function redactIp(ip) {
+  if (typeof ip !== "string" || !ip) return "";
+  if (ip.includes(":")) return "····:····"; // IPv6 — hide entirely
+  const parts = ip.split(".");
+  if (parts.length !== 4) return "···";
+  return `${parts[0]}.···.···.${parts[3]}`;
+}
 
 const CAT_COLORS = {
   LLM01: "#ff3860",
@@ -22,6 +35,7 @@ const CAT_COLORS = {
 
 export default function ThreatFeed() {
   const { threats, connected } = useThreatStream(40);
+  const [showIps, setShowIps] = useState(false);
 
   const byCategory = useMemo(() => {
     const m = {};
@@ -33,6 +47,14 @@ export default function ThreatFeed() {
     <section className="panel">
       <div className="panel-head">
         <h2>Real-Time Threat Feed</h2>
+        <button
+          type="button"
+          className="ip-toggle"
+          onClick={() => setShowIps((v) => !v)}
+          title={showIps ? "Redact source IPs" : "Reveal source IPs"}
+        >
+          {showIps ? "Hide IPs" : "Show IPs"}
+        </button>
         <span className={`dot ${connected ? "dot-on" : "dot-off"}`} title={connected ? "live" : "disconnected"} />
       </div>
 
@@ -51,6 +73,8 @@ export default function ThreatFeed() {
         {threats.map((t, i) => {
           const cat = t.category || "LLM01";
           const ts = t.ts ? new Date(t.ts) : null;
+          const clientIp = t.forensics?.clientIp;
+          const geo = t.forensics?.enrichment?.geoip;
           return (
             <li key={i} className="feed-item">
               <span className="cat-tag" style={{ background: CAT_COLORS[cat] || "#475569" }}>
@@ -61,6 +85,13 @@ export default function ThreatFeed() {
                 <div className="feed-meta">
                   {t.categoryTitle || "Policy violation"} · {t.userId || "anon"} · {ts && !isNaN(ts) ? ts.toLocaleTimeString() : "—"}
                   {t.kind === "outbound" ? " · OUTBOUND" : ""}
+                  {clientIp ? (
+                    <span className="feed-ip" title={showIps ? clientIp : "source IP redacted"}>
+                      {" · "}
+                      {showIps ? clientIp : redactIp(clientIp)}
+                      {geo?.country ? ` (${geo.country})` : ""}
+                    </span>
+                  ) : ""}
                 </div>
               </div>
               <span className={`pill ${t.blocked ? "pill-bad" : "pill-warn"}`}>

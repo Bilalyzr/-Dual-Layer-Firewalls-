@@ -25,6 +25,9 @@ import cors from "cors";
 import { sessionMiddleware } from "./auth/session.js";
 import { requestLogger } from "./lib/logger.js";
 import { metricsMiddleware, mountTelemetry } from "./middleware/telemetry.js";
+import { ipContextMiddleware, trustedProxies } from "./middleware/ipContext.js";
+import { ipGuardMiddleware } from "./middleware/ipGuard.js";
+import { ipInAnyCidr } from "./lib/cidr.js";
 import { proxyTo } from "./lib/forward.js";
 import { busMode } from "./middleware/eventBus.js";
 import { llmConfig } from "./llm/client.js";
@@ -39,6 +42,7 @@ import shapRouter from "./routes/shap.js";
 import sessionRouter from "./routes/session.js";
 import authRouter from "./routes/auth.js";
 import internalAgentRouter from "./routes/internalAgent.js";
+import responseRouter from "./routes/response.js";
 
 const ROLES = new Set(["all", "gateway", "firewall", "agent", "biometric"]);
 
@@ -55,6 +59,7 @@ function mountMonolith(app) {
   app.use("/api/metrics", metricsRouter);
   app.use("/api/inspect", inspectRouter);
   app.use("/api/shap", shapRouter);
+  app.use("/api/response", responseRouter);
 }
 
 function mountGateway(app) {
@@ -64,6 +69,7 @@ function mountGateway(app) {
   app.use("/api/events", eventsRouter);
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
+  app.use("/api/response", responseRouter); // ops surface lives on the edge
   // Forwards compute-heavy paths to their owning services.
   app.use("/api/chat", proxyTo(firewallSvc()));
   app.use("/api/inspect", proxyTo(firewallSvc()));
@@ -76,10 +82,15 @@ export function createApp({ role = "all" } = {}) {
 
   const app = express();
   app.disable("x-powered-by");
+  // Trust a forwarding hop only when it's in the TRUSTED_PROXIES allow-list, so
+  // Express's own req.ip agrees with our ipContext resolution (Epic A).
+  app.set("trust proxy", (ip) => ipInAnyCidr(ip, trustedProxies()));
   app.use(cors({ exposedHeaders: ["x-session-token", "x-request-id"] }));
   app.use(express.json({ limit: "2mb" }));
   app.use(requestLogger);
   app.use(metricsMiddleware);
+  app.use(ipContextMiddleware);
+  app.use(ipGuardMiddleware); // Epic C: refuse banned IPs before the pipeline
   app.use(sessionMiddleware);
   mountTelemetry(app, { role });
 

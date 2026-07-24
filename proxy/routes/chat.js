@@ -19,6 +19,9 @@ import { chatCompletion } from "../llm/client.js";
 import { isAgentic, runTrifecta } from "../agents/orchestrator.js";
 import { insertAlert, insertSample } from "../db/mongo.js";
 import { publish } from "../middleware/eventBus.js";
+import { forensicsFromReq } from "../middleware/ipContext.js";
+import { requestEnrichment } from "../forensics/enrich.js";
+import { recordOffense } from "../response/banStore.js";
 
 const router = Router();
 
@@ -41,6 +44,9 @@ router.post("/", async (req, res) => {
   const userId = session?.userId || req.body?.userId || "anon";
   const sessionId = session?.sessionId || null;
   const prompt = req.body?.prompt || "";
+  // Epic A: resolve the tamper-resistant client IP once; attached to every alert
+  // this request produces so BLOCK/THREAT records carry forensic provenance.
+  const forensics = forensicsFromReq(req);
 
   // EPIC B step-up gate: a session whose keystroke trust collapsed is frozen
   // until a fresh WebAuthn assertion clears it (see /api/auth/webauthn/*).
@@ -93,10 +99,15 @@ router.post("/", async (req, res) => {
       threatProbability: null,
       mode: MODE,
       blocked: true,
+      forensics,
       ts: new Date(),
     };
-    await insertAlert(alert);
+    const stored = await insertAlert(alert);
     publish("threat", alert);
+    // Epic B: enrich the source IP out-of-band (never on the request path).
+    if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
+    // Epic C: feed the auto-response engine (bans repeat offenders; no-op if off).
+    if (forensics?.clientIp) await recordOffense(forensics.clientIp);
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
     return res.json({
       blocked: true,
@@ -186,10 +197,13 @@ router.post("/", async (req, res) => {
       threatProbability: threatProb,
       mode: MODE,
       blocked: willBlock,
+      forensics,
       ts: new Date(),
     };
-    await insertAlert(alert);
+    const stored = await insertAlert(alert);
     publish("threat", alert);
+    if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
+    if (forensics?.clientIp) await recordOffense(forensics.clientIp);
     console.warn(`[firewall] ${MODE.toUpperCase()} ${willBlock ? "BLOCK" : "DETECT"} [${category}] ${label}`);
   } else {
     // 1.5 adversarial monitoring — sample low-confidence ALLOWED traffic.
@@ -245,6 +259,7 @@ router.post("/", async (req, res) => {
         mode: MODE,
         blocked: !!r.agentTrace?.blocked,
         agentTrace: r.agentTrace,
+        forensics,
         ts: new Date(),
       });
     } else {
@@ -285,7 +300,7 @@ router.post("/", async (req, res) => {
     const label = output.blocked
       ? "Outbound exfiltration/tool-call blocked"
       : "Outbound unsafe content blocked (Llama Guard)";
-    await insertAlert({
+    const outboundStored = await insertAlert({
       userId,
       sessionId,
       kind: "outbound",
@@ -297,8 +312,10 @@ router.post("/", async (req, res) => {
       llamaGuard: guardOutput.owasp,
       mode: MODE,
       blocked: true,
+      forensics,
       ts: new Date(),
     });
+    if (forensics) requestEnrichment({ alertId: outboundStored.alertId, ip: forensics.clientIp });
     publish("threat", {
       userId,
       kind: "outbound",
@@ -306,6 +323,7 @@ router.post("/", async (req, res) => {
       categoryTitle: OWASP_TITLES[outboundCategory],
       label,
       blocked: true,
+      forensics,
       ts: new Date(),
     });
   }
