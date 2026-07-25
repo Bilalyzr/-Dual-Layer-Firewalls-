@@ -101,6 +101,22 @@ code, .mono { font-family: var(--mono); }
 
 ::selection { background: rgba(0, 240, 255, 0.3); color: #fff; }
 
+/* ---- Keyboard focus ring (a11y) ----
+   Only shows for keyboard navigation (:focus-visible), never on mouse click, so
+   the neon aesthetic is untouched for pointer users while keyboard users get a
+   clear cyan indicator. Text inputs keep their own glow-focus (below). */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+.btn-ghost:focus-visible,
+.ip-toggle:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: rgba(0, 240, 255, 0.04); }
@@ -836,4 +852,24 @@ code, .mono { font-family: var(--mono); }
   font-size: 11px;
   color: var(--cyan);
   letter-spacing: 1px;
+}
+
+/* ==========================================================================
+   REDUCED MOTION (a11y)
+   Respect the OS "reduce motion" setting: kill the ambient loops (moving grid,
+   floating logo, spinning rings/ticks, pulsing dots, boot rings) and collapse
+   entrance/transition timings. Content stays fully functional — just still.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* The perspective grid animates via background-position; stop it outright so
+     it renders as a static backdrop rather than jumping to a single frame. */
+  body::before { animation: none !important; }
 }
