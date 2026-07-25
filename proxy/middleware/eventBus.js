@@ -19,6 +19,13 @@
 import { log } from "../lib/logger.js";
 
 const subscribers = new Set();
+// In-process event listeners (Tier 3 · Wave 2 · Epic D). Unlike SSE `subscribers`
+// (which are HTTP `res` streams for the browser), these are plain callbacks so a
+// server-side consumer — the SIEM relay, threat correlation, etc. — can be "just
+// another subscriber" without holding an HTTP connection. They fire in the process
+// that calls publish(); across the distributed topology that is the service which
+// actually detected the event, so a threat is forwarded exactly once.
+const listeners = new Set();
 const CHANNEL = process.env.EVENT_BUS_CHANNEL || "firewall:events";
 
 let redisPub = null;
@@ -29,6 +36,16 @@ export function subscribe(res) {
   subscribers.add(res);
   res.on("close", () => subscribers.delete(res));
   return () => subscribers.delete(res);
+}
+
+/**
+ * Register a server-side listener invoked with `{ type, ts, payload }` on every
+ * publish() in this process. Returns an unsubscribe fn. Never let a listener throw
+ * into the publisher's path — we isolate each call.
+ */
+export function onEvent(cb) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
 }
 
 function deliverLocal(line) {
@@ -43,6 +60,17 @@ function deliverLocal(line) {
  */
 export function publish(type, payload) {
   const event = { type, ts: new Date().toISOString(), payload };
+  // Fan out to in-process listeners first (SIEM relay, correlation feed). Isolated
+  // so a slow/failing consumer can never break the SSE delivery below.
+  if (listeners.size) {
+    for (const cb of listeners) {
+      try {
+        cb(event);
+      } catch (err) {
+        log.warn("event bus: listener threw", { type, error: String(err.message || err) });
+      }
+    }
+  }
   const line = `event: ${type}\ndata: ${JSON.stringify(event)}\n\n`;
   if (redisReady && redisPub) {
     redisPub.publish(CHANNEL, line).catch((err) =>
@@ -122,6 +150,11 @@ export async function startBusRelay() {
     redisReady = false;
     return false;
   }
+}
+
+/** Test hook: drop all in-process listeners (SIEM relay et al.). */
+export function __clearListeners() {
+  listeners.clear();
 }
 
 /** Tear the relay down (graceful shutdown / tests). */

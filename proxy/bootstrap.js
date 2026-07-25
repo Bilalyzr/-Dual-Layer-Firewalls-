@@ -12,6 +12,7 @@ import { connect } from "./db/mongo.js";
 import { startBusRelay, busMode } from "./middleware/eventBus.js";
 import { connectStore, storeMode } from "./lib/store.js";
 import { hydrateBans } from "./response/banStore.js";
+import { startSiemRelay, siemEnabled } from "./integrations/siem.js";
 import { log } from "./lib/logger.js";
 import { llmConfig } from "./llm/client.js";
 import { strictReal } from "./lib/strict.js";
@@ -29,6 +30,7 @@ export async function startService(role = "all") {
   await startBusRelay();
   await connectStore(); // Tier-3 Redis command client (reputation cache + ip guard)
   await hydrateBans(); // load persisted CIDR bans into the in-memory guard index
+  startSiemRelay(); // Tier-3 Wave 2: forward BLOCK events to the SIEM (no-op if unset)
 
   // Real-only posture check: warn loudly if strict mode is on but the LLM is not
   // configured — chat/agent calls will hard-fail (by design) until a key is set.
@@ -49,6 +51,7 @@ export async function startService(role = "all") {
         firewall: (process.env.FIREWALL_MODE || "shadow").toLowerCase(),
         biometric: (process.env.BIOMETRIC_MODE || "shadow").toLowerCase(),
         llmConfigured: llmConfig().configured,
+        siem: siemEnabled(),
       });
       resolve(server);
     });

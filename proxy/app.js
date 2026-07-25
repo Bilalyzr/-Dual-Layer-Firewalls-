@@ -27,6 +27,9 @@ import { requestLogger } from "./lib/logger.js";
 import { metricsMiddleware, mountTelemetry } from "./middleware/telemetry.js";
 import { ipContextMiddleware, trustedProxies } from "./middleware/ipContext.js";
 import { ipGuardMiddleware } from "./middleware/ipGuard.js";
+import { geoFenceMiddleware } from "./middleware/geoFence.js";
+import { dnsblGuardMiddleware } from "./middleware/dnsblGuard.js";
+import { botScoreMiddleware } from "./middleware/botScore.js";
 import { ipInAnyCidr } from "./lib/cidr.js";
 import { proxyTo } from "./lib/forward.js";
 import { busMode } from "./middleware/eventBus.js";
@@ -43,6 +46,7 @@ import sessionRouter from "./routes/session.js";
 import authRouter from "./routes/auth.js";
 import internalAgentRouter from "./routes/internalAgent.js";
 import responseRouter from "./routes/response.js";
+import intelRouter from "./routes/intel.js";
 
 const ROLES = new Set(["all", "gateway", "firewall", "agent", "biometric"]);
 
@@ -60,6 +64,7 @@ function mountMonolith(app) {
   app.use("/api/inspect", inspectRouter);
   app.use("/api/shap", shapRouter);
   app.use("/api/response", responseRouter);
+  app.use("/api/intel", intelRouter);
 }
 
 function mountGateway(app) {
@@ -70,6 +75,7 @@ function mountGateway(app) {
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
   app.use("/api/response", responseRouter); // ops surface lives on the edge
+  app.use("/api/intel", intelRouter); // threat-intel read model + STIX/TAXII export
   // Forwards compute-heavy paths to their owning services.
   app.use("/api/chat", proxyTo(firewallSvc()));
   app.use("/api/inspect", proxyTo(firewallSvc()));
@@ -91,6 +97,10 @@ export function createApp({ role = "all" } = {}) {
   app.use(metricsMiddleware);
   app.use(ipContextMiddleware);
   app.use(ipGuardMiddleware); // Epic C: refuse banned IPs before the pipeline
+  // Wave 2 · Epic E — edge network defenses (all no-op unless explicitly enabled):
+  app.use(geoFenceMiddleware); // geo/ASN allow|deny fencing
+  app.use(dnsblGuardMiddleware); // DNS blocklist offense feeder
+  app.use(botScoreMiddleware); // cadence + JA3/JA4 bot scoring → Epic C
   app.use(sessionMiddleware);
   mountTelemetry(app, { role });
 

@@ -11,6 +11,12 @@ import { storeMode } from "../lib/store.js";
 import { ipForensicsEnabled } from "../middleware/ipContext.js";
 import { enrichmentEnabled } from "../forensics/enrich.js";
 import { responseMode, killSwitchEngaged } from "../response/banStore.js";
+import { siemStats } from "../integrations/siem.js";
+import { stixEnabled } from "../integrations/stix.js";
+import { signatureBlockEnabled } from "../firewall/fingerprint.js";
+import { geofenceMode } from "../middleware/geoFence.js";
+import { dnsblEnabled } from "../forensics/dnsbl.js";
+import { botScoreEnabled } from "../middleware/botScore.js";
 
 const router = Router();
 
@@ -53,6 +59,17 @@ router.get("/status", async (_req, res) => {
       autoBanThreshold: parseInt(process.env.AUTO_BAN_THRESHOLD || "5", 10),
       autoBanWindowSec: parseInt(process.env.AUTO_BAN_WINDOW || "600", 10),
     },
+    // Tier-3 Wave 2: threat-intel sharing + network-level defenses posture.
+    intel: {
+      siem: siemStats(),
+      stix: stixEnabled(),
+      signatureBlock: signatureBlockEnabled(),
+    },
+    netDefense: {
+      geofence: geofenceMode(),
+      dnsbl: dnsblEnabled(),
+      botScore: botScoreEnabled(),
+    },
     llm: llmConfig(),
     // Real-time posture: which subsystems run on a REAL backend vs. are
     // unconfigured. In strict mode unconfigured backends fail loudly instead of
@@ -72,7 +89,8 @@ router.get("/status", async (_req, res) => {
     },
     db: dbStats,
     tiers: {
-      current: "Tier 1 + Tier 2 (Epics A–H) + Tier 3 Wave 1 (IP forensics & auto-response)",
+      current:
+        "Tier 1 + Tier 2 (Epics A–H) + Tier 3 Wave 1 (IP forensics & auto-response) + Wave 2 (SIEM/STIX & network defenses)",
       implemented: [
         "Phase 4: LSTM + RF/GB/MLP biometric ensemble + async SHAP",
         "Phase 5: Trifecta Reader→Validator→Actor agents (schema validation + RBAC)",
@@ -85,8 +103,12 @@ router.get("/status", async (_req, res) => {
         "Tier-3 A: trustworthy client-IP resolution + encrypted forensics sub-document",
         "Tier-3 B: out-of-band GeoIP/ASN/reputation enrichment (cached, fail-open)",
         "Tier-3 C: Redis-backed auto-ban engine (sliding window, /24 escalation, honeypot)",
+        "Tier-3 D: SIEM webhook relay + attack-signature short-circuit + STIX 2.1/TAXII export + threat correlation",
+        "Tier-3 E: geo/ASN fencing + DNSBL edge guard + cadence/JA3 bot scoring (feeds auto-response)",
       ],
-      deferred: [],
+      deferred: [
+        "Tier-3 E: client-side (canvas/WebGL/audio) fingerprinting — GDPR personal data, gated on Epic I consent (not yet built)",
+      ],
     },
   });
 });

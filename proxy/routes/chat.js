@@ -22,6 +22,7 @@ import { publish } from "../middleware/eventBus.js";
 import { forensicsFromReq } from "../middleware/ipContext.js";
 import { requestEnrichment } from "../forensics/enrich.js";
 import { recordOffense } from "../response/banStore.js";
+import { computeFingerprint, checkSignature, recordSignature } from "../firewall/fingerprint.js";
 
 const router = Router();
 
@@ -80,6 +81,10 @@ router.post("/", async (req, res) => {
   const THRESHOLD = threshold();
   const SAMPLE_RATE = sampleRate();
 
+  // Epic D: structural attack signature — cheap, local, computed once and reused
+  // for the pre-ML short-circuit below and for "learning" a confirmed threat.
+  const fp = computeFingerprint(prompt);
+
   // 1.2 heuristic scan first — local & sub-millisecond. A confirmed heuristic hit
   // in enforce mode lets us BLOCK immediately without paying the ML + Llama Guard
   // network round-trips, keeping the firewall path under the <5ms PRD target.
@@ -108,6 +113,8 @@ router.post("/", async (req, res) => {
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
     // Epic C: feed the auto-response engine (bans repeat offenders; no-op if off).
     if (forensics?.clientIp) await recordOffense(forensics.clientIp);
+    // Epic D: teach the signature cache so this attack shape is caught pre-ML next time.
+    await recordSignature(fp.signature, { category, label, techniques: fp.techniques });
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
     return res.json({
       blocked: true,
@@ -126,6 +133,56 @@ router.post("/", async (req, res) => {
       },
       latencyMs: +(performance.now() - t0).toFixed(2),
     });
+  }
+
+  // Epic D: known-signature short-circuit. A prompt whose structural signature has
+  // been confirmed a threat enough times is blocked BEFORE the ML + Llama-Guard
+  // round-trips — the §12.1 cost saver. Enforce-only, so shadow still logs via ML.
+  if (MODE === "enforce") {
+    const sigHit = await checkSignature(fp.signature);
+    if (sigHit) {
+      const category = sigHit.category;
+      const label = `Known attack signature (${sigHit.hits} prior) — ${sigHit.label}`;
+      const alert = {
+        userId,
+        sessionId,
+        kind: "signature",
+        category,
+        categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+        label,
+        prompt: mask(prompt),
+        signature: fp.signature,
+        threatProbability: null,
+        mode: MODE,
+        blocked: true,
+        forensics,
+        ts: new Date(),
+      };
+      const stored = await insertAlert(alert);
+      publish("signature", alert);
+      publish("threat", alert);
+      if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
+      if (forensics?.clientIp) await recordOffense(forensics.clientIp);
+      await recordSignature(fp.signature, { category, label: sigHit.label, techniques: fp.techniques });
+      console.warn(`[firewall] ENFORCE BLOCK [${category}] signature ${fp.signature} (ML short-circuit)`);
+      return res.json({
+        blocked: true,
+        reason: "blocked by AI firewall",
+        category,
+        categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+        verdict: {
+          mode: MODE,
+          threshold: THRESHOLD,
+          signature: { matched: true, signature: fp.signature, priorHits: sigHit.hits },
+          classifier: { skipped: true, reason: "signature short-circuit" },
+          llamaGuard: { skipped: true, reason: "signature short-circuit" },
+          threat: true,
+          category,
+          shortCircuit: true,
+        },
+        latencyMs: +(performance.now() - t0).toFixed(2),
+      });
+    }
   }
 
   // 1.3 + EPIC C — ML classification (cached per-prompt, Tier-3 §12.8) + Llama
@@ -204,6 +261,8 @@ router.post("/", async (req, res) => {
     publish("threat", alert);
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
     if (forensics?.clientIp) await recordOffense(forensics.clientIp);
+    // Epic D: learn the signature so a repeat of this attack shape is caught pre-ML.
+    await recordSignature(fp.signature, { category: category || "LLM01", label, techniques: fp.techniques });
     console.warn(`[firewall] ${MODE.toUpperCase()} ${willBlock ? "BLOCK" : "DETECT"} [${category}] ${label}`);
   } else {
     // 1.5 adversarial monitoring — sample low-confidence ALLOWED traffic.
