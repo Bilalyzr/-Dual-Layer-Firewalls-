@@ -20,4 +20,5 @@ RUN python -m engine.classifier.train && \
     python -m engine.biometric.train_biometric
 
 EXPOSE 8011
-CMD ["uvicorn", "engine.app:app", "--host", "0.0.0.0", "--port", "8011"]
+# Read $PORT when provided (Render/cloud injects it); default to 8011 locally.
+CMD ["sh", "-c", "uvicorn engine.app:app --host 0.0.0.0 --port ${PORT:-8011}"]

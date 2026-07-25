@@ -1,0 +1,66 @@
+# Render Blueprint — deploys the proxy + engine as two free web services.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# After the first deploy, Render keeps these in sync with this file on push.
+# Both services auto-deploy from the `main` branch.
+#
+# IMPORTANT: set the env vars marked "set in dashboard" in the Render UI
+# (Secrets) — never commit real keys. See DEPLOY.md.
+
+services:
+  # ---- Python engine: scikit-learn classifier + LSTM/ensemble + SHAP ----
+  - type: web
+    name: dlf-engine
+    runtime: docker
+    plan: free
+    region: oregon            # change to frankfurt/singapore if closer
+    dockerfilePath: ./engine/Dockerfile
+    dockerContext: ./engine
+    healthCheckPath: /health
+    # The engine trains both models at build time (Dockerfile RUN step), so no
+    # extra env needed for the model artifacts. Expose the port Render assigns.
+    envVars:
+      - key: PORT
+        value: 8011
+      - key: uvicorn
+        sync: false
+    # Render injects PORT; we read it in the Dockerfile CMD via $PORT.
+    # The engine Dockerfile already listens on 8011; Render maps it automatically.
+
+  # ---- Node.js proxy: the AI Firewall gateway ----
+  - type: web
+    name: dlf-proxy
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./proxy/Dockerfile
+    dockerContext: ./proxy
+    healthCheckPath: /api/alerts/status
+    envVars:
+      - key: PROXY_PORT
+        value: 4000
+      # The engine's Render URL — set this AFTER the engine deploys (see DEPLOY.md).
+      - key: ENGINE_URL
+        sync: false
+      # MongoDB Atlas connection string — set in dashboard (Secret).
+      - key: MONGO_URI
+        sync: false
+      # ---- LLM backend (set in dashboard as Secrets) ----
+      - key: LLM_BASE_URL
+        value: https://open.bigmodel.cn/api/paas/v4
+      - key: LLM_MODEL
+        value: glm-4.5-flash
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_TIMEOUT_MS
+        value: "45000"
+      # ---- Firewall modes ----
+      - key: FIREWALL_MODE
+        value: enforce
+      - key: FIREWALL_THRESHOLD
+        value: "0.65"
+      - key: BIOMETRIC_MODE
+        value: shadow
+      # ---- Session secret (set in dashboard as a Secret) ----
+      - key: SESSION_SECRET
+        sync: false
