@@ -37,6 +37,10 @@ import { llmConfig } from "./llm/client.js";
 
 import chatRouter from "./routes/chat.js";
 import biometricRouter from "./routes/biometric.js";
+import mouseRouter from "./routes/mouse.js";
+import fingerprintRouter from "./routes/fingerprint.js";
+import touchRouter from "./routes/touch.js";
+import slaRouter from "./routes/sla.js";
 import eventsRouter from "./routes/events.js";
 import alertsRouter from "./routes/alerts.js";
 import metricsRouter from "./routes/metrics.js";
@@ -47,6 +51,7 @@ import authRouter from "./routes/auth.js";
 import internalAgentRouter from "./routes/internalAgent.js";
 import responseRouter from "./routes/response.js";
 import intelRouter from "./routes/intel.js";
+import consentRouter from "./routes/consent.js";
 
 const ROLES = new Set(["all", "gateway", "firewall", "agent", "biometric"]);
 
@@ -58,6 +63,10 @@ function mountMonolith(app) {
   app.use("/api/auth", authRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/biometric", biometricRouter);
+  app.use("/api/biometric/mouse", mouseRouter);
+  app.use("/api/biometric/fingerprint", fingerprintRouter);
+  app.use("/api/biometric/touch", touchRouter);
+  app.use("/api/sla", slaRouter);
   app.use("/api/events", eventsRouter);
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
@@ -65,6 +74,7 @@ function mountMonolith(app) {
   app.use("/api/shap", shapRouter);
   app.use("/api/response", responseRouter);
   app.use("/api/intel", intelRouter);
+  app.use("/api/consent", consentRouter);
 }
 
 function mountGateway(app) {
@@ -74,9 +84,12 @@ function mountGateway(app) {
   app.use("/api/events", eventsRouter);
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
+  app.use("/api/sla", slaRouter); // SLA/observability read model lives on the edge
   app.use("/api/response", responseRouter); // ops surface lives on the edge
   app.use("/api/intel", intelRouter); // threat-intel read model + STIX/TAXII export
-  // Forwards compute-heavy paths to their owning services.
+  app.use("/api/consent", consentRouter); // consent is identity-adjacent — lives on the edge
+  // Forwards compute-heavy paths to their owning services. The `/api/biometric`
+  // prefix also covers the mouse/touch/fingerprint sub-routes (Epic E/G).
   app.use("/api/chat", proxyTo(firewallSvc()));
   app.use("/api/inspect", proxyTo(firewallSvc()));
   app.use("/api/biometric", proxyTo(biometricSvc()));
@@ -113,6 +126,11 @@ export function createApp({ role = "all" } = {}) {
     app.use("/internal/agent", internalAgentRouter);
   } else if (role === "biometric") {
     app.use("/api/biometric", biometricRouter);
+    // Epic E/G behavioral sub-channels — mounted here too so distributed mode
+    // matches the monolith (the gateway forwards the whole /api/biometric prefix).
+    app.use("/api/biometric/mouse", mouseRouter);
+    app.use("/api/biometric/fingerprint", fingerprintRouter);
+    app.use("/api/biometric/touch", touchRouter);
     app.use("/api/shap", shapRouter);
   }
 

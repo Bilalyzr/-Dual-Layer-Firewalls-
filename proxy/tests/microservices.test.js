@@ -131,4 +131,37 @@ describe("event bus (in-process fallback)", () => {
     expect(chunks.join("")).toContain("event: threat");
     expect(chunks.join("")).toContain("LLM01");
   });
+
+  // Regression: a dashboard client that vanishes uncleanly (TCP reset / killed
+  // mid-stream) leaves a subscriber whose write() throws. publish() must swallow
+  // that, evict the dead subscriber, and keep delivering to healthy ones — never
+  // throw into the caller (which previously crashed the whole proxy).
+  it("evicts a subscriber whose write throws and keeps serving others", () => {
+    const before = subscriberCount();
+    const dead = { write: () => { throw new Error("EPIPE"); }, on: () => {} };
+    const alive = [];
+    const good = { write: (l) => alive.push(l), on: () => {} };
+    subscribe(dead);
+    subscribe(good);
+    expect(subscriberCount()).toBe(before + 2);
+
+    expect(() => publish("biometric", { trust_score: 42 })).not.toThrow();
+
+    // Dead one dropped; healthy one still received the frame.
+    expect(subscriberCount()).toBe(before + 1);
+    expect(alive.join("")).toContain("event: biometric");
+  });
+
+  // Regression: subscribe() must register an "error" handler so an async socket
+  // error (unclean disconnect) does not become an unhandled fatal "error" event.
+  it("registers an error handler that evicts on socket error", () => {
+    const before = subscriberCount();
+    const handlers = {};
+    const res = { write: () => {}, on: (ev, fn) => { handlers[ev] = fn; } };
+    subscribe(res);
+    expect(subscriberCount()).toBe(before + 1);
+    expect(typeof handlers.error).toBe("function"); // the crash-preventing listener
+    handlers.error(new Error("ECONNRESET")); // simulate the async socket error
+    expect(subscriberCount()).toBe(before);
+  });
 });

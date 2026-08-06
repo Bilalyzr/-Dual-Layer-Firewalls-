@@ -1,0 +1,26 @@
+# EPIC K — gVisor (runsc) micro-VM runtime for the Reader-Agent sandbox.
+#
+# gVisor provides a userspace kernel — stronger isolation than Docker's default
+# runc (no direct syscalls to the host kernel). This override file replaces the
+# reader-svc runtime with runsc when gVisor is installed on the host.
+#
+# Prerequisites (on the Docker host):
+#   1. Install gVisor: https://gvisor.dev/docs/user_guide/install/
+#   2. Register runsc with Docker:
+#        sudo /usr/local/bin/runsc install
+#   3. Deploy:
+#        docker compose -f docker-compose.yml -f reader-svc/docker-compose.gvisor.yml up reader-svc
+#
+# If runsc isn't installed, Docker falls back to runc (the existing Docker-level
+# isolation from EPIC E still applies; this is defense-in-depth on top of it).
+services:
+  reader-svc:
+    runtime: runsc          # gVisor userspace kernel (stronger than runc)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "1001:1001"

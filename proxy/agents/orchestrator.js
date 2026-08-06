@@ -13,6 +13,7 @@
 import { read } from "./readerAgent.js";
 import { act } from "./actorAgent.js";
 import { toolsFor } from "./rbac.js";
+import { detectCanaryLeak } from "../firewall/canary.js";
 
 // Heuristic: a prompt is "agentic" if it embeds a chunk of untrusted content
 // AND implies an action. This keeps normal Q&A on the fast path.
@@ -99,6 +100,24 @@ export async function runTrifecta({ prompt, userId, emit }) {
   const actor = await act(reader.json, (e) => trace.stages.push({ step: "actor", ...e }));
   trace.actor = { tool: actor.tool, rbac: actor.rbac, schemaValid: actor.schemaValid, result: actor.result };
   emit?.({ stage: "actor:done", tool: actor.tool, rbac: actor.rbac, result: actor.result });
+
+  // ----- 2b. Per-agent canary check -------------------------------------
+  // Either agent's custom system prompt now carries its own canary. If a leak
+  // surfaces in either agent's raw output, treat it as system-prompt exfiltration
+  // and block — this was the gap where Trifecta prompt leaks went undetected.
+  const canaryLeak = reader.canaryLeak === true || detectCanaryLeak(actor.reasoning).leaked;
+  if (canaryLeak) {
+    trace.blocked = true;
+    trace.blockReason = "canary_leak";
+    trace.stages.push({ step: "canary", leaked: true });
+    emit?.({ stage: "canary_leak" });
+    return {
+      content: "[Trifecta] Blocked — an agent leaked its system-prompt canary (possible prompt exfiltration).",
+      raw: { reader: reader.raw, actor: actor.reasoning },
+      simulated: reader.simulated || actor.simulated,
+      agentTrace: trace,
+    };
+  }
 
   // ----- 3. Assemble response -------------------------------------------
   let content;

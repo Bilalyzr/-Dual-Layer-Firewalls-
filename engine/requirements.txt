@@ -1,3 +1,10 @@
+# NumPy 2 note: a clean install (CI / fresh venv) resolves consistently against
+# numpy 2.x — sklearn/pandas pull numpy-2 wheels and their optional binary
+# accelerators (pyarrow, bottleneck, numexpr) are imported only if present.
+# A *conda base* env can still fail collection with "AttributeError: _ARRAY_API
+# not found" when it carries older accelerators compiled against numpy 1.x.
+# Fix without downgrading numpy:  pip install -U pyarrow bottleneck numexpr
+# (or run the engine in a dedicated venv:  python -m venv .venv && pip install -r engine/requirements.txt)
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 scikit-learn==1.6.1

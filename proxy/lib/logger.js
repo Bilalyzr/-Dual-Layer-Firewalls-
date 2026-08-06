@@ -13,6 +13,7 @@
  * without fighting ES-module import hoisting (see config/env.js for the pattern).
  */
 import crypto from "crypto";
+import { recordRequest } from "../observability/sla.js";
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 
@@ -54,12 +55,17 @@ export function requestLogger(req, res, next) {
   res.setHeader("x-request-id", rid);
   const t0 = performance.now();
   res.on("finish", () => {
+    const latencyMs = +(performance.now() - t0).toFixed(1);
+    // Feed the SLA rolling window (EPIC H). requestLogger runs in every role,
+    // so each service maintains its own in-process window; multi-instance
+    // aggregation goes through the OTLP seam, not here.
+    recordRequest(latencyMs, res.statusCode);
     emit(res.statusCode >= 500 ? "error" : "info", "request", {
       requestId: rid,
       method: req.method,
       path: req.originalUrl || req.url,
       status: res.statusCode,
-      latencyMs: +(performance.now() - t0).toFixed(1),
+      latencyMs,
     });
   });
   next();

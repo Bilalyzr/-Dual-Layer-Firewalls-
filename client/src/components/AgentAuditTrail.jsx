@@ -55,7 +55,6 @@ export default function AgentAuditTrail() {
     <section className="panel">
       <div className="panel-head">
         <h2>Agent Audit Trail</h2>
-        <span className="pill pill-ok">Phase 5</span>
       </div>
 
       <p className="muted small">

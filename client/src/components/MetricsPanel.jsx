@@ -44,7 +44,7 @@ export default function MetricsPanel() {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Benchmark <small>(Phase 3)</small></h2>
+        <h2>Benchmark</h2>
         <span className="muted small">{m.note}</span>
       </div>
       <div className="stat-row">

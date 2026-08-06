@@ -6,6 +6,8 @@
  * apiFetch, which attaches `Authorization: Bearer <token>` so the server can
  * bind requests to a verifiable session and enforce WebAuthn step-up.
  */
+import { resolvePublicIp } from "./publicIp";
+
 const TOKEN_KEY = "dlf.token";
 const SID_KEY = "dlf.sessionId";
 
@@ -42,5 +44,10 @@ export function getSessionId() {
 export async function apiFetch(url, opts = {}, userId) {
   await ensureSession(userId);
   const headers = { ...(opts.headers || {}), Authorization: `Bearer ${token}` };
+  // Local-dev demo: hand the proxy our real public IP so the threat feed shows a
+  // real address instead of loopback. Ignored server-side unless DEMO_PUBLIC_IP=true
+  // AND the peer is loopback, so this is inert (and harmless) in production.
+  const publicIp = await resolvePublicIp();
+  if (publicIp) headers["x-demo-client-ip"] = publicIp;
   return fetch(url, { ...opts, headers });
 }

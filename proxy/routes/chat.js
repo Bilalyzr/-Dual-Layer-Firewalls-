@@ -14,6 +14,8 @@ import { runHeuristics, OWASP_TITLES } from "../firewall/heuristics.js";
 import { classifyPrompt } from "../firewall/mlClient.js";
 import { getCached, setCached } from "../firewall/clfCache.js";
 import { checkOutput } from "../firewall/outputCheck.js";
+import { detectCanaryLeak } from "../firewall/canary.js";
+import { rebuffCheck } from "../firewall/rebuff.js";
 import { moderateContent } from "../firewall/llamaGuard.js";
 import { chatCompletion } from "../llm/client.js";
 import { isAgentic, runTrifecta } from "../agents/orchestrator.js";
@@ -176,6 +178,7 @@ router.post("/", async (req, res) => {
           signature: { matched: true, signature: fp.signature, priorHits: sigHit.hits },
           classifier: { skipped: true, reason: "signature short-circuit" },
           llamaGuard: { skipped: true, reason: "signature short-circuit" },
+          rebuff: { score: 1.0, detected: true, layers: { signature: { matched: true, hits: sigHit.hits } }, note: "blocked by known signature" },
           threat: true,
           category,
           shortCircuit: true,
@@ -215,6 +218,14 @@ router.post("/", async (req, res) => {
     heuristic.signals[0]?.category ||
     guardInput.owasp?.[0]?.owasp ||
     (mlThreat ? "LLM01" : guardThreat ? "LLM05" : null);
+  // Rebuff-style 4-layer defense (Protect AI approach): combine all detection
+  // layers — max score wins, any layer flagging = threat.
+  const rebuff = rebuffCheck(prompt, {
+    threatProbability: threatProb,
+    outlierFlag: classification.outlier_flag,
+    ready: engineReady,
+  });
+
   const verdict = {
     mode: MODE,
     threshold: THRESHOLD,
@@ -228,6 +239,7 @@ router.post("/", async (req, res) => {
       degraded: guardInput.degraded || false,
       latencyMs: guardInput.latencyMs,
     },
+    rebuff: { score: rebuff.score, detected: rebuff.detected, layers: rebuff.layers },
     threat: isThreat,
     category,
   };
@@ -335,14 +347,18 @@ router.post("/", async (req, res) => {
   }
 
   // 1.4 outbound integrity check on the response — regex + Llama Guard, parallel.
+  // EPIC F: also check for canary-token leakage (system-prompt exfiltration).
   const [output, guardOutput] = await Promise.all([
     Promise.resolve(checkOutput(llmResponse.content)),
     moderateContent({ text: llmResponse.content, role: "assistant" }),
   ]);
+  const canaryLeak = detectCanaryLeak(llmResponse.content);
   const guardOutputUnsafe =
     guardOutput.enabled && (!guardOutput.safe || (guardOutput.degraded && MODE === "enforce"));
-  const outboundBlocked = output.blocked || guardOutputUnsafe;
-  const outboundCategory = output.blocked ? "LLM02" : guardOutput.owasp?.[0]?.owasp || "LLM05";
+  const outboundBlocked = output.blocked || guardOutputUnsafe || canaryLeak.leaked;
+  const outboundCategory = canaryLeak.leaked
+    ? "LLM07"
+    : output.blocked ? "LLM02" : guardOutput.owasp?.[0]?.owasp || "LLM05";
 
   let finalContent = llmResponse.content;
   if (outboundBlocked && MODE === "enforce") {

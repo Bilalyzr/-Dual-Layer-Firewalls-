@@ -15,6 +15,7 @@
 import { chatCompletionMessages } from "../llm/client.js";
 import { READER_OUTPUT } from "./schemas.js";
 import { validate, extractJSON } from "./validator.js";
+import { injectCanaryMessages, detectCanaryLeak } from "../firewall/canary.js";
 
 const VALID_INTENTS = ["informational", "summarize", "translate", "classify", "unknown"];
 
@@ -95,18 +96,30 @@ export async function read(content, emit) {
   let parsed = null;
   let simulated = false;
   let fallbackUsed = false;
+  let canaryLeak = false;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const res = await chatCompletionMessages(
+    // Per-agent canary: the Reader's custom system prompt now carries its own
+    // fresh canary, so a prompt-exfil from the Reader is caught (previously the
+    // agents' custom prompts had no canary at all).
+    const { messages } = injectCanaryMessages(
       [
         { role: "system", content: READER_SYSTEM_PROMPT },
         { role: "user", content: `Untrusted content to extract:\n\n${content}` },
       ],
-      { temperature: 0.2, maxTokens: 300, simulatedPrefix: "[READER simulated] " }
+      "reader"
     );
+    const res = await chatCompletionMessages(messages, {
+      temperature: 0.2, maxTokens: 300, simulatedPrefix: "[READER simulated] ",
+    });
     simulated = simulated || res.simulated === true;
     const rawEmpty = !res.content || !res.content.trim();
     attempts.push(res.content);
+    const leak = detectCanaryLeak(res.content);
+    if (leak.leaked) {
+      canaryLeak = true;
+      emit?.({ stage: "reader", attempt, canaryLeak: true, label: leak.label });
+    }
     emit?.({ stage: "reader", attempt, raw: res.content?.slice(0, 200), simulated: res.simulated === true, empty: rawEmpty });
 
     let candidate = extractJSON(res.content);
@@ -145,6 +158,7 @@ export async function read(content, emit) {
     errors: lastErrors,
     attempts,
     simulated,
+    canaryLeak,
   };
 }
 

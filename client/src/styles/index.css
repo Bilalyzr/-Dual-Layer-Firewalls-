@@ -873,3 +873,122 @@ summary:focus-visible,
      it renders as a static backdrop rather than jumping to a single frame. */
   body::before { animation: none !important; }
 }
+
+/* ==========================================================================
+   CONSENT GATE (Epic I) — banner overlay + collapsed privacy chip
+   ========================================================================== */
+.consent-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at bottom, rgba(2, 4, 10, 0.55), rgba(2, 4, 10, 0.82));
+  backdrop-filter: blur(3px);
+}
+.consent-card {
+  width: min(560px, 100%);
+  box-shadow: var(--glow-cyan);
+  border-color: var(--panel-edge-hot);
+}
+.consent-intro { margin: 8px 0 14px; line-height: 1.5; }
+.consent-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.consent-row { display: flex; align-items: flex-start; gap: 14px; }
+.consent-copy { flex: 1; }
+.consent-label { color: var(--text); font-weight: 600; }
+.consent-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--panel-edge);
+  color: var(--text-dim);
+}
+.btn-ghost:hover { border-color: var(--cyan); color: var(--text); }
+.consent-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+}
+.consent-x:hover { color: var(--red); }
+
+/* iOS-style toggle */
+.consent-toggle { position: relative; display: inline-block; width: 42px; height: 24px; flex: 0 0 auto; margin-top: 2px; }
+.consent-toggle input { opacity: 0; width: 0; height: 0; }
+.consent-slider {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background: rgba(93, 114, 152, 0.35);
+  border: 1px solid var(--panel-edge);
+  border-radius: 24px;
+  transition: 0.2s;
+}
+.consent-slider::before {
+  content: "";
+  position: absolute;
+  height: 16px; width: 16px;
+  left: 3px; top: 3px;
+  background: var(--text-dim);
+  border-radius: 50%;
+  transition: 0.2s;
+}
+.consent-toggle input:checked + .consent-slider {
+  background: rgba(0, 240, 255, 0.25);
+  border-color: var(--cyan);
+}
+.consent-toggle input:checked + .consent-slider::before {
+  transform: translateX(18px);
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+
+.consent-chip {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font: 12px/1 var(--mono);
+  cursor: pointer;
+  backdrop-filter: blur(var(--glass-blur));
+}
+.consent-chip:hover { border-color: var(--cyan); color: var(--text); }
+.consent-chip-count { color: var(--cyan); }
+
+/* ==========================================================================
+   SLA PANEL (Epic H)
+   ========================================================================== */
+.sla-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+.sla-cell {
+  background: rgba(10, 17, 36, 0.5);
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+.sla-num { font: 600 18px/1.1 var(--mono); color: var(--text); }
+.sla-lbl { font: 10px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
+.sla-ok { color: var(--green); }
+.sla-warn { color: var(--yellow); }
+.sla-bad { color: var(--red); }
+.sla-anomalies { list-style: none; margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }

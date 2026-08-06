@@ -18,6 +18,7 @@ import {
 import {
   resolveIpContext,
   forensicsFromReq,
+  demoClientIpHeader,
   __resetTrustedCache,
 } from "../middleware/ipContext.js";
 import {
@@ -37,6 +38,8 @@ function fakeReq({ peer, headers = {} } = {}) {
 beforeEach(() => {
   delete process.env.TRUSTED_PROXIES;
   delete process.env.IP_FORENSICS_ENABLED;
+  delete process.env.DEMO_PUBLIC_IP;
+  delete process.env.DEMO_CLIENT_IP_HEADER;
   __resetTrustedCache();
 });
 
@@ -134,6 +137,35 @@ describe("resolveIpContext — spoof rejection", () => {
     );
     expect(ctx.clientIp).toBe("198.51.100.7");
     expect(ctx.spoofed).toBe(true);
+  });
+});
+
+describe("local-dev demo public IP (DEMO_PUBLIC_IP)", () => {
+  it("is OFF by default — a self-reported IP from loopback is ignored", () => {
+    const ctx = resolveIpContext(
+      fakeReq({ peer: "127.0.0.1", headers: { "x-demo-client-ip": "203.0.113.77" } })
+    );
+    expect(demoClientIpHeader()).toBe("");
+    expect(ctx.clientIp).toBe("127.0.0.1"); // header not honored
+  });
+
+  it("surfaces the self-reported public IP from a LOOPBACK peer when enabled", () => {
+    process.env.DEMO_PUBLIC_IP = "true";
+    const ctx = resolveIpContext(
+      fakeReq({ peer: "127.0.0.1", headers: { "x-demo-client-ip": "203.0.113.77" } })
+    );
+    expect(ctx.clientIp).toBe("203.0.113.77");
+    expect(ctx.realIp).toBe("127.0.0.1");
+    expect(ctx.spoofed).toBe(false);
+  });
+
+  it("REFUSES the self-reported IP from a non-loopback peer even when enabled (anti-spoof)", () => {
+    process.env.DEMO_PUBLIC_IP = "true";
+    const ctx = resolveIpContext(
+      fakeReq({ peer: "198.51.100.7", headers: { "x-demo-client-ip": "203.0.113.77" } })
+    );
+    expect(ctx.clientIp).toBe("198.51.100.7"); // pinned to the real peer, demo header dropped
+    expect(ctx.clientIp).not.toBe("203.0.113.77");
   });
 });
 

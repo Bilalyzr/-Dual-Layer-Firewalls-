@@ -40,6 +40,24 @@ export function useThreatStream(max = 50) {
         push(setAgentEvents, payload);
       } catch {}
     });
+    // Enrichment lands out-of-band (geoip/asn/reputation) after the threat is
+    // already on screen. Merge it into the matching threat(s) by source IP so the
+    // country / org appears next to the address without dropping the live item.
+    es.addEventListener("enrichment", (e) => {
+      try {
+        const { payload } = JSON.parse(e.data);
+        const ip = payload?.ip;
+        const enrichment = payload?.enrichment;
+        if (!ip) return;
+        setThreats((prev) =>
+          prev.map((t) =>
+            t?.forensics?.clientIp === ip
+              ? { ...t, forensics: { ...t.forensics, enrichment } }
+              : t
+          )
+        );
+      } catch {}
+    });
 
     return () => es.close();
   }, [max]);

@@ -17,7 +17,31 @@ import { log } from "./lib/logger.js";
 import { llmConfig } from "./llm/client.js";
 import { strictReal } from "./lib/strict.js";
 
+// Last-resort safety net. The proxy is a security control with no supervisor in
+// local dev (scripts/runner.js does not restart a dead child), so an off-path
+// async error must never take the whole firewall down. We log loudly and keep
+// serving rather than exit — the request path itself already fails safe per-route.
+// Installed once, at module load, before any listener is wired.
+let _guardsInstalled = false;
+function installProcessGuards() {
+  if (_guardsInstalled) return;
+  _guardsInstalled = true;
+  process.on("unhandledRejection", (reason) => {
+    log.error("unhandledRejection (kept alive)", {
+      error: String(reason?.message || reason),
+      stack: reason?.stack,
+    });
+  });
+  process.on("uncaughtException", (err) => {
+    log.error("uncaughtException (kept alive)", {
+      error: String(err?.message || err),
+      stack: err?.stack,
+    });
+  });
+}
+
 export async function startService(role = "all") {
+  installProcessGuards();
   // Set at runtime so the orchestrator's recursion guard + the logger/telemetry
   // service label resolve correctly (all read process.env lazily, per call).
   process.env.SERVICE_ROLE = role;

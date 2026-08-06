@@ -102,7 +102,71 @@ const RULES = [
     category: "LLM06",
     label: "Weapon/substance synthesis request",
   },
+  // ---- Cross-lingual instruction-override (EPIC F) ------------------------ //
+  // Spanish
+  { re: /\b(ignora|ignorar|desactiva|olvida)\b[^.]{0,30}\b(instrucciones|reglas|indicaciones|anteriores|previas|todas)\b/i, category: "LLM01", label: "Instruction override (ES)" },
+  // French (imperative: ignore/oublie/néglige/désactive)
+  { re: /\b(ignor(e|er|r)?|oublie|néglige|désactive)\b[^.]{0,30}\b(instructions?|règles?|consignes?|précédentes?|précédent|toutes|tous)\b/i, category: "LLM01", label: "Instruction override (FR)" },
+  // German
+  { re: /\b(ignoriere|vergiss|deaktiviere)\b[^.]{0,30}\b(Anweisungen|Regeln|vorigen|vorherigen|alle)\b/i, category: "LLM01", label: "Instruction override (DE)" },
+  // Portuguese
+  { re: /\b(ignora|ignore|esqueça|desative)\b[^.]{0,30}\b(instruções|regras|anteriores|todas)\b/i, category: "LLM01", label: "Instruction override (PT)" },
+  // Hindi (romanized — most attacks use Latin script)
+  { re: /\b(purani|pichhli|sabhi)\b[^.]{0,20}\b(nirdesh|niyam|instructions?|rules?)\b[^.]{0,20}\b(ignor|bhul|hatkar)/i, category: "LLM01", label: "Instruction override (HI)" },
+  // Chinese (romanized pinyin + a few CJK common terms)
+  { re: /\b(hulüe|wangji|zhixing)\b[^.]{0,20}\b(yiqian|suoyou|zhiling|guize)/i, category: "LLM01", label: "Instruction override (ZH-pinyin)" },
+  { re: /(忽略|忘记|无视|执行)[^。]{0,20}(之前|以前|所有|指令|规则|指令)/i, category: "LLM01", label: "Instruction override (ZH-CJK)" },
+  // Russian (romanized)
+  { re: /\b(ignoriruy|zabud|otmeni)\b[^.]{0,25}\b(instruktsii|pravila|predydushchie|vse)\b/i, category: "LLM01", label: "Instruction override (RU)" },
+  // Arabic (romanized)
+  { re: /\b(tajahal|insa|ilgha)\b[^.]{0,25}\b(al-ta'alimat|al-qawanin|sabiqah|jami'a)\b/i, category: "LLM01", label: "Instruction override (AR)" },
+  // Role-play jailbreaks — cross-lingual "you are now / developer mode"
+  { re: /\b(tu es maintenant|tu eres ahora|du bist jetzt|você é agora|sei jetzt)\b[^.]{0,20}\b(un|uma|ein)\b[^.]{0,20}\b(ia?|ai|modelo?|assistant)/i, category: "LLM01", label: "Role-play jailbreak (multilingual)" },
+  // ---- Native-script instruction-override (Wave 4) ----------------------- //
+  // These cover non-Latin scripts the romanized rules above miss. No \b word
+  // boundaries (meaningless between non-ASCII chars) and no ASCII \w (which does
+  // not match Cyrillic/Devanagari) — use \p{L} or literal-substring matching.
+  // Russian (Cyrillic)
+  { re: /(игнорир\p{L}*|забудь\p{L}*|отмени\p{L}*|пропусти\p{L}*)[\s\S]{0,25}(инструкц\p{L}+|правил\p{L}+|предыдущ\p{L}+|все)/iu, category: "LLM01", label: "Instruction override (RU native)" },
+  // Hindi (Devanagari) — match on stems as substrings (matras are combining marks)
+  { re: /(निर्देश|नियम|आदेश|हिदायत)[\s\S]{0,25}(अनदेखा|भूल|नज़रअंदाज़|छोड़)|(अनदेखा|नज़रअंदाज़|भूल)[\s\S]{0,25}(निर्देश|नियम|आदेश)/u, category: "LLM01", label: "Instruction override (HI native)" },
+  // Arabic (Arabic script)
+  { re: /(تجاهل|انس|ألغ|الغ|تخط)[\s\S]{0,25}(التعليمات|القواعد|الأوامر|السابقة)/u, category: "LLM01", label: "Instruction override (AR native)" },
+  // Japanese
+  { re: /(以前|前|すべて|全て)[\s\S]{0,14}(指示|命令|ルール|指令)[\s\S]{0,14}(無視|忘れ|破棄)/u, category: "LLM01", label: "Instruction override (JA native)" },
+  // Korean
+  { re: /(이전|모든|앞의)[\s\S]{0,12}(지시|명령|규칙|지침)[\s\S]{0,12}(무시|잊어)/u, category: "LLM01", label: "Instruction override (KO native)" },
 ];
+
+/**
+ * Normalize text to defeat evasion that hides a known signature behind Unicode
+ * tricks (Wave 4):
+ *   - NFKC folds full-width / compatibility forms ("ｉｇｎｏｒｅ" → "ignore")
+ *   - stripping combining marks defeats accent/diacritic evasion ("ígnóré" →
+ *     "ignore") so the ASCII rules fire. Combining marks live in U+0300–U+036F
+ *     (Latin/Greek/Cyrillic); native-script vowel signs (Devanagari matras,
+ *     Arabic harakat) sit elsewhere and are deliberately left intact.
+ */
+function normalize(text) {
+  return text.normalize("NFKC").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function scan(str, signals, matchedRules) {
+  for (const rule of RULES) {
+    if (matchedRules.has(rule)) continue; // already fired on a prior pass
+    const m = str.match(rule.re);
+    if (m) {
+      matchedRules.add(rule);
+      const start = Math.max(0, (m.index || 0) - 20);
+      const end = Math.min(str.length, (m.index || 0) + m[0].length + 20);
+      signals.push({
+        category: rule.category,
+        label: rule.label,
+        snippet: str.slice(start, end).trim(),
+      });
+    }
+  }
+}
 
 /**
  * Scan a prompt against all heuristic rules.
@@ -113,18 +177,12 @@ export function runHeuristics(text) {
   const t0 = performance.now();
   const signals = [];
   if (typeof text === "string" && text.length) {
-    for (const rule of RULES) {
-      const m = text.match(rule.re);
-      if (m) {
-        const start = Math.max(0, (m.index || 0) - 20);
-        const end = Math.min(text.length, (m.index || 0) + m[0].length + 20);
-        signals.push({
-          category: rule.category,
-          label: rule.label,
-          snippet: text.slice(start, end).trim(),
-        });
-      }
-    }
+    const matchedRules = new Set();
+    // Pass 1: raw text (accurate snippets for the common case).
+    scan(text, signals, matchedRules);
+    // Pass 2: normalized text — only adds rules that evasion hid from pass 1.
+    const norm = normalize(text);
+    if (norm !== text) scan(norm, signals, matchedRules);
   }
   const latencyMs = +(performance.now() - t0).toFixed(3);
   return { matched: signals.length > 0, signals, latencyMs };

@@ -15,6 +15,7 @@ import { ACTION_SCHEMAS } from "./schemas.js";
 import { validate, extractJSON } from "./validator.js";
 import { canCall } from "./rbac.js";
 import { callTool } from "./tools.js";
+import { injectCanaryMessages, detectCanaryLeak } from "../firewall/canary.js";
 
 const ACTOR_SYSTEM_PROMPT = [
   "You are the ACTOR agent in a Zero-Trust Trifecta architecture.",
@@ -37,14 +38,20 @@ const ACTOR_SYSTEM_PROMPT = [
  * @returns {Promise<{tool:string|null, args:object, rbac:boolean, schemaValid:boolean, result:object, reasoning:string, simulated:boolean}>}
  */
 export async function act(readerJson, emit) {
-  const res = await chatCompletionMessages(
+  // Per-agent canary in the Actor's custom system prompt (see readerAgent).
+  const { messages } = injectCanaryMessages(
     [
       { role: "system", content: ACTOR_SYSTEM_PROMPT },
       { role: "user", content: `Reader output:\n${JSON.stringify(readerJson)}` },
     ],
-    { temperature: 0.2, maxTokens: 200, simulatedPrefix: "[ACTOR simulated] " }
+    "actor"
   );
+  const res = await chatCompletionMessages(messages, {
+    temperature: 0.2, maxTokens: 200, simulatedPrefix: "[ACTOR simulated] ",
+  });
   const simulated = res.simulated === true;
+  const canaryLeak = detectCanaryLeak(res.content).leaked;
+  if (canaryLeak) emit?.({ stage: "actor", canaryLeak: true });
   emit?.({ stage: "actor", reasoning: res.content?.slice(0, 200), simulated });
 
   // Parse the Actor's tool-call envelope.

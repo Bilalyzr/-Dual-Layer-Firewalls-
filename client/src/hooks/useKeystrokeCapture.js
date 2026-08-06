@@ -99,8 +99,5 @@ export function useKeystrokeCapture({ userId, enabled = true } = {}) {
     };
   }, [enabled, flush, scheduleFlush]);
 
-  // Clean internal fields before exposing.
-  const sanitize = (ev) => ({ d: ev.d, f: ev.f });
-
   return { ref, trust, flush, pending: events.current };
 }

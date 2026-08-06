@@ -17,9 +17,18 @@ router.get("/", (req, res) => {
   // Initial hello so EventSource.onopen fires reliably.
   res.write(`event: hello\ndata: ${JSON.stringify({ connected: true })}\n\n`);
   subscribe(res);
-  // Keepalive ping every 25s.
-  const ka = setInterval(() => res.write(`: keepalive\n\n`), 25000);
-  req.on("close", () => clearInterval(ka));
+  // Keepalive ping every 25s. Guard the write: if the socket died between ticks,
+  // writing throws — stop pinging rather than let the error propagate.
+  const ka = setInterval(() => {
+    try {
+      res.write(`: keepalive\n\n`);
+    } catch {
+      clearInterval(ka);
+    }
+  }, 25000);
+  const stop = () => clearInterval(ka);
+  req.on("close", stop);
+  res.on("error", stop);
 });
 
 router.get("/subscribers", (_req, res) => {

@@ -49,6 +49,39 @@ except Exception as exc:  # pragma: no cover — startup guard
     print(f"[engine] classifier not loaded: {exc}")
 
 
+def _warm_models() -> None:
+    """Warm the heavy optional paths at boot instead of on the first /classify.
+
+    Previously the ensemble + DistilBERT embedding firewall were imported and
+    loaded lazily *inside* the request, so the first classify absorbed the full
+    model-load latency (and each call re-imported). Loading the cached singletons
+    here moves that cost to startup. Fail-open: any failure just leaves the lazy
+    fallback in place — never blocks boot.
+    """
+    try:
+        from .classifier.ensemble import ensemble_ready, get_ensemble
+
+        if ensemble_ready():
+            get_ensemble()  # caches the soft-voting singleton
+            print("[engine] ensemble warmed")
+    except Exception as exc:  # pragma: no cover — warm is best-effort
+        print(f"[engine] ensemble warm skipped: {exc}")
+
+    try:
+        from .classifier.embedding_firewall import enabled as _emb_enabled, _load_model, _load_fit
+
+        if _emb_enabled():
+            _load_fit()
+            _load_model()  # caches the DistilBERT sentence-transformer
+            print("[engine] embedding firewall warmed")
+    except Exception as exc:  # pragma: no cover — warm is best-effort
+        print(f"[engine] embedding warm skipped: {exc}")
+
+
+if os.getenv("ENGINE_WARM_MODELS", "true").lower() == "true":
+    _warm_models()
+
+
 # --------------------------------------------------------------------------- #
 # Models
 # --------------------------------------------------------------------------- #
@@ -60,6 +93,13 @@ class ClassifyResponse(BaseModel):
     threat_probability: float
     latency_ms: float
     ready: bool
+    model_used: str = "logreg"          # EPIC F: logreg | ensemble | none
+    outlier_distance: float = 0.0       # EPIC F: embedding-outlier distance
+    outlier_flag: bool = False          # EPIC F: novel-injection flag
+    degraded: bool = False              # EPIC F: embedding path failed (≠ "no outlier")
+    degraded_reason: str = ""           # why the embedding path is degraded
+    llmguard_risk: float = 0.0          # LLM Guard (Protect AI) risk score
+    llmguard_detected: bool = False     # LLM Guard flagged injection
 
 
 class ScoreRequest(BaseModel):
@@ -83,12 +123,67 @@ def root() -> dict[str, Any]:
 @app.post("/classify", response_model=ClassifyResponse)
 def classify(req: ClassifyRequest) -> ClassifyResponse:
     t0 = time.perf_counter()
-    proba = _CLF.predict_proba(req.text) if _CLF_READY else 0.0
+    # EPIC F: prefer the soft-voting ensemble when trained; fall back to single LogReg.
+    proba = 0.0
+    model_used = "none"
+    if _CLF_READY:
+        try:
+            from .classifier.ensemble import ensemble_ready, get_ensemble
+
+            if ensemble_ready():
+                proba = get_ensemble().predict_proba(req.text)
+                model_used = "ensemble"
+            else:
+                proba = _CLF.predict_proba(req.text)
+                model_used = "logreg"
+        except Exception:
+            proba = _CLF.predict_proba(req.text)
+            model_used = "logreg"
     latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    # EPIC F: optional DistilBERT embedding-outlier score (catches novel injections).
+    outlier_distance = 0.0
+    is_outlier = False
+    degraded = False
+    degraded_reason = ""
+    try:
+        from .classifier.embedding_firewall import is_outlier as _is_out, status as _emb_status
+
+        is_outlier, outlier_distance = _is_out(req.text)
+        st = _emb_status()
+        degraded = bool(st.get("degraded"))
+        degraded_reason = st.get("reason", "")
+    except Exception as exc:
+        # The import/call itself failed — that's a degradation, not "no outlier".
+        degraded = True
+        degraded_reason = f"{type(exc).__name__}: {exc}"
+
+    # LLM Guard (Protect AI): DeBERTa-based production prompt-injection scanner.
+    llmguard_risk = 0.0
+    llmguard_detected = False
+    try:
+        from .classifier.llmguard_scanner import scan as _lg_scan
+
+        lg = _lg_scan(req.text)
+        llmguard_risk = lg["risk_score"]
+        llmguard_detected = lg["detected"]
+        # Combine: take the MAX of the ensemble + LLM Guard so either detector
+        # flagging a threat is enough to block it (defense-in-depth).
+        proba = max(proba, llmguard_risk)
+    except Exception:
+        pass
+
     return ClassifyResponse(
         threat_probability=round(proba, 4),
         latency_ms=round(latency_ms, 3),
         ready=_CLF_READY,
+        model_used=model_used,
+        outlier_distance=round(float(outlier_distance), 4),
+        outlier_flag=bool(is_outlier),
+        degraded=degraded,
+        degraded_reason=degraded_reason,
+        llmguard_risk=round(llmguard_risk, 4),
+        llmguard_detected=bool(llmguard_detected),
     )
 
 

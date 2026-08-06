@@ -11,9 +11,10 @@
  */
 import { Router } from "express";
 import { scoreBiometricBatch } from "../firewall/mlClient.js";
-import { getBaseline, upsertBaseline, insertBiometricEvent } from "../db/mongo.js";
+import { getBaseline, upsertBaseline, insertBiometricEvent, getBehaviorBaseline } from "../db/mongo.js";
 import { publish } from "../middleware/eventBus.js";
 import { shouldStepUp, requireStepUp } from "../auth/session.js";
+import { fuseTrust } from "../firewall/trustFusion.js";
 
 const router = Router();
 
@@ -65,32 +66,53 @@ router.post("/batch", async (req, res) => {
     lastReason: engineResult.reason,
   });
 
-  // EPIC B enforcement hook: in enforce mode, when a known user's keystroke
-  // trust collapses below the step-up threshold, mark the session so /api/chat
-  // demands a fresh WebAuthn assertion, and alert the dashboard.
+  // EPIC G fusion: fold the mouse/touch channels into the trust signal. When no
+  // usable auxiliary channel exists (the common case, and every existing test),
+  // fusedTrust === engineResult.trust_score so behavior is unchanged.
+  const now = Date.now();
+  const toChannel = (b) =>
+    b && typeof b.lastScore === "number"
+      ? { score: b.lastScore, coldStart: Boolean(b.lastColdStart), ageMs: b.lastTs ? now - new Date(b.lastTs).getTime() : undefined }
+      : null;
+  const [mouseB, touchB] = await Promise.all([
+    getBehaviorBaseline(userId, "mouse"),
+    getBehaviorBaseline(userId, "touch"),
+  ]);
+  const fusion = fuseTrust({
+    keystrokeTrust: engineResult.trust_score,
+    keystrokeColdStart: engineResult.cold_start,
+    mouse: toChannel(mouseB),
+    touch: toChannel(touchB),
+  });
+
+  // EPIC B enforcement hook: in enforce mode, when a known user's (fused) trust
+  // collapses below the step-up threshold, mark the session so /api/chat demands
+  // a fresh WebAuthn assertion, and alert the dashboard.
   let stepUpRequired = false;
   const STEPUP_THRESHOLD = stepUpThreshold();
   if (
     sessionId &&
     shouldStepUp({
       mode: bioMode(),
-      trustScore: engineResult.trust_score,
+      trustScore: fusion.fusedTrust,
       threshold: STEPUP_THRESHOLD,
       coldStart: engineResult.cold_start,
     })
   ) {
-    await requireStepUp(sessionId, `trust ${Math.round(engineResult.trust_score)} <= ${STEPUP_THRESHOLD}`);
+    await requireStepUp(sessionId, `fused trust ${Math.round(fusion.fusedTrust)} <= ${STEPUP_THRESHOLD}`);
     stepUpRequired = true;
     publish("stepup", {
       userId,
       sessionId,
       event: "step_up_required",
       trust_score: engineResult.trust_score,
+      fused_trust_score: fusion.fusedTrust,
+      fused: fusion.fused,
       threshold: STEPUP_THRESHOLD,
       reason: engineResult.reason,
       ts: new Date(),
     });
-    console.warn(`[biometric] ENFORCE STEP-UP required for ${userId} (trust=${Math.round(engineResult.trust_score)} <= ${STEPUP_THRESHOLD})`);
+    console.warn(`[biometric] ENFORCE STEP-UP required for ${userId} (fused trust=${Math.round(fusion.fusedTrust)} <= ${STEPUP_THRESHOLD})`);
   }
 
   const event = {
@@ -104,6 +126,9 @@ router.post("/batch", async (req, res) => {
     model_used: engineResult.model_used || "zscore",
     p_genuine: engineResult.p_genuine,
     shap_request_id: engineResult.shap_request_id,
+    fused_trust_score: fusion.fusedTrust,
+    fused: fusion.fused,
+    fusion_channels: fusion.channels,
     stepUpRequired,
     batchSize: dwellTimes.length,
     baselineN: priorN,
@@ -113,7 +138,16 @@ router.post("/batch", async (req, res) => {
   await insertBiometricEvent(event);
   publish("biometric", event);
 
-  return res.json({ accepted: dwellTimes.length, ...engineResult, stepUpRequired, baselineN: priorN, minSamples: MIN_SAMPLES });
+  return res.json({
+    accepted: dwellTimes.length,
+    ...engineResult,
+    fused_trust_score: fusion.fusedTrust,
+    fused: fusion.fused,
+    fusion_channels: fusion.channels,
+    stepUpRequired,
+    baselineN: priorN,
+    minSamples: MIN_SAMPLES,
+  });
 });
 
 /** GET current baseline summary for a user (dashboard). */

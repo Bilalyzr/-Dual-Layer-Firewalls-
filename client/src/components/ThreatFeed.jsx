@@ -35,7 +35,10 @@ const CAT_COLORS = {
 
 export default function ThreatFeed() {
   const { threats, connected } = useThreatStream(40);
-  const [showIps, setShowIps] = useState(false);
+  // Operator decision (Epic A): the feed shows the REAL source IP by default so
+  // analysts can act on it immediately; the toggle lets them redact for
+  // screen-sharing / PII-sensitive contexts.
+  const [showIps, setShowIps] = useState(true);
 
   const byCategory = useMemo(() => {
     const m = {};

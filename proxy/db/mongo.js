@@ -36,6 +36,7 @@ const mem = {
   alerts: [],
   samples: [],
   baselines: new Map(),
+  behavior_baselines: new Map(), // `${channel}:${userId}` -> mouse/touch baseline (Epic G)
   biometric_events: [],
   sessions: new Map(),      // sessionId -> session doc
   credentials: [],          // WebAuthn credential docs
@@ -52,6 +53,7 @@ export async function connect() {
       db.collection("alerts").createIndex({ alertId: 1 }, { sparse: true }),
       db.collection("samples").createIndex({ ts: -1 }),
       db.collection("baselines").createIndex({ userId: 1 }, { unique: true }),
+      db.collection("behavior_baselines").createIndex({ userId: 1, channel: 1 }, { unique: true }),
       db.collection("biometric_events").createIndex({ ts: -1 }),
       db.collection("sessions").createIndex({ sessionId: 1 }, { unique: true }),
       db.collection("credentials").createIndex({ credentialID: 1 }, { unique: true }),
@@ -144,6 +146,35 @@ export async function upsertBaseline(userId, patch) {
   const next = { ...prev, ...enc, updatedAt: new Date() };
   mem.baselines.set(userId, next);
   return decryptFields(next, SENSITIVE_BASELINE_FIELDS);
+}
+
+// ---- Behavioral baselines: mouse / touch (Epic G) ------------------------ //
+// Keystroke baselines are their own collection above; mouse/touch share this
+// one, keyed by (userId, channel). Previously these lived in per-process Maps
+// inside the routes, so they reset on restart and diverged across biometric-svc
+// replicas. Persisting them here fixes both (and keeps the in-mem fallback).
+export async function getBehaviorBaseline(userId, channel) {
+  const key = `${channel}:${userId}`;
+  const row = connected
+    ? await db.collection("behavior_baselines").findOne({ userId, channel })
+    : mem.behavior_baselines.get(key) || null;
+  return row || null;
+}
+
+export async function upsertBehaviorBaseline(userId, channel, patch) {
+  const key = `${channel}:${userId}`;
+  if (connected) {
+    await db.collection("behavior_baselines").updateOne(
+      { userId, channel },
+      { $set: { userId, channel, updatedAt: new Date(), ...patch } },
+      { upsert: true }
+    );
+    return await getBehaviorBaseline(userId, channel);
+  }
+  const prev = mem.behavior_baselines.get(key) || { userId, channel };
+  const next = { ...prev, ...patch, updatedAt: new Date() };
+  mem.behavior_baselines.set(key, next);
+  return next;
 }
 
 // ---- Biometric events (trust score history) ------------------------------ //

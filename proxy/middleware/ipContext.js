@@ -28,6 +28,30 @@ import { normalizeIp, ipInAnyCidr, parseCidrList } from "../lib/cidr.js";
 // with TRUSTED_PROXIES for their real edge (nginx/Cloudflare) CIDRs.
 const DEFAULT_TRUSTED = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,fc00::/7";
 
+// Loopback only — used to gate the local-dev demo IP path below (NOT the full
+// trusted set). Parsed once.
+const LOOPBACK = parseCidrList("127.0.0.0/8,::1/128");
+
+/**
+ * Local-dev demo escape hatch (OFF by default). In local dev the whole
+ * browser → Vite → backend chain is loopback, so the ONLY client IP the backend
+ * can ever observe is 127.0.0.1 — there is no public address in the chain to
+ * show in the threat feed. When DEMO_PUBLIC_IP=true (or DEMO_CLIENT_IP_HEADER is
+ * set), the browser may self-report its own public IP (fetched client-side, see
+ * client/src/lib/publicIp.js) via a header that `resolveIpContext` will surface.
+ *
+ * SAFE BY CONSTRUCTION: the header is honored ONLY when the direct socket peer is
+ * loopback. In any real deployment the peer is the edge proxy (Cloudflare/nginx),
+ * never loopback, so an internet client can never use this to spoof its address —
+ * even if the flag were left on. It is a display aid, not a trust source.
+ * Returns the header name to trust, or "" when disabled.
+ */
+export function demoClientIpHeader() {
+  const explicit = process.env.DEMO_CLIENT_IP_HEADER;
+  if (explicit) return String(explicit).toLowerCase();
+  return String(process.env.DEMO_PUBLIC_IP ?? "").toLowerCase() === "true" ? "x-demo-client-ip" : "";
+}
+
 let _cache = null;
 let _cacheKey = null;
 
@@ -78,6 +102,23 @@ export function resolveIpContext(req) {
   const cf = firstIp(req, "cf-connecting-ip");
   const xreal = firstIp(req, "x-real-ip");
   const internal = firstIp(req, "x-client-ip");
+
+  // Local-dev demo: honor a browser-self-reported public IP ONLY from a loopback
+  // peer (see demoClientIpHeader). Inert in production — the edge proxy peer is
+  // never loopback there — so this cannot be used to spoof a real client IP.
+  const demoHeader = demoClientIpHeader();
+  if (demoHeader && peer && ipInAnyCidr(peer, LOOPBACK)) {
+    const demoIp = firstIp(req, demoHeader);
+    if (demoIp) {
+      return {
+        clientIp: demoIp,
+        realIp: peer,
+        proxyChain: [demoIp, peer],
+        peerTrusted: true,
+        spoofed: false,
+      };
+    }
+  }
 
   // Untrusted direct peer: forwarding headers are attacker-controlled. Ignore
   // them and pin the client to the socket peer — a forged XFF can't move it.

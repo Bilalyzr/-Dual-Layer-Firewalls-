@@ -34,8 +34,15 @@ let redisReady = false;
 
 export function subscribe(res) {
   subscribers.add(res);
-  res.on("close", () => subscribers.delete(res));
-  return () => subscribers.delete(res);
+  const remove = () => subscribers.delete(res);
+  res.on("close", remove);
+  // A client that vanishes UNCLEANLY (TCP reset, process killed mid-stream) does
+  // not always fire "close" before the socket surfaces an async "error" (EPIPE /
+  // ECONNRESET). An unhandled "error" event on a stream is FATAL in Node — it
+  // takes the whole proxy down. Listen for it so a dropped dashboard tab just
+  // evicts its subscriber instead of crashing the firewall.
+  res.on("error", remove);
+  return remove;
 }
 
 /**
@@ -49,7 +56,15 @@ export function onEvent(cb) {
 }
 
 function deliverLocal(line) {
-  for (const res of subscribers) res.write(line);
+  for (const res of subscribers) {
+    try {
+      res.write(line);
+    } catch {
+      // Writing to a half-open/destroyed stream can throw synchronously; drop the
+      // dead subscriber so it can't wedge or crash later deliveries.
+      subscribers.delete(res);
+    }
+  }
   return subscribers.size;
 }
 

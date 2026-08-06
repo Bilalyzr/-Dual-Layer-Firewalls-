@@ -69,9 +69,6 @@ export default function BiometricMonitor({ userId }) {
     <section className="panel">
       <div className="panel-head">
         <h2>Keystroke Dynamics</h2>
-        <span className="muted small">
-          {modelUsed === "ensemble" ? "Tier 2 · LSTM + RF/GB/MLP ensemble" : "Tier 1 · rolling-average z-score"}
-        </span>
       </div>
 
       <div className="bio-grid">

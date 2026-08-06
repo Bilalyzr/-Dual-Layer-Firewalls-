@@ -1,0 +1,12 @@
+# EPIC J — Helm chart for the Dual-Layer AI Firewall.
+#
+# Deploys the full microservice stack to Kubernetes with auto-scaling, rolling
+# updates, PodDisruptionBudgets, and per-service health checks.
+apiVersion: v2
+name: dual-layer-firewall
+description: Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Bilalyzr
