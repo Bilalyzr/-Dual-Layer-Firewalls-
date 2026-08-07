@@ -78,11 +78,14 @@ export default function ChatPanel({ userId }) {
           },
         ]);
       } else if (data.error) {
-        // Friendly rendering of the common LLM timeout / connection errors.
+        // Friendly rendering of the common LLM errors.
         const detail = String(data.detail || "");
         const isTimeout = /timeout|aborted|ETIMEDOUT/i.test(detail);
         const isUnreachable = /ECONNREFUSED|ENOTFOUND|fetch failed/i.test(detail);
-        const msg = isTimeout
+        const isRateLimited = /rate.?limit|429|LLM_RATE/i.test(detail + data.error);
+        const msg = isRateLimited
+          ? `⏳ GLM rate limit hit — wait a few seconds between messages. (Free tier limits: ~5 requests/min)`
+          : isTimeout
           ? `⏳ The LLM took too long to respond (timed out). Try again — the model is occasionally slow.`
           : isUnreachable
           ? `🌐 Could not reach the LLM provider (${data.error}). Check your network or API key.`

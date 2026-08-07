@@ -6,15 +6,41 @@
  * entirely via env (see .env.example).
  */
 import dns from "node:dns";
+import https from "node:https";
 import { strictReal } from "../lib/strict.js";
 
-// Fix: on some Windows networks the default DNS resolver fails to resolve
-// certain domains (e.g. open.bigmodel.cn) even though nslookup works. Forcing
-// Node to use Google/Cloudflare public DNS directly fixes this reliably.
-dns.setDefaultResultOrder("ipv4first");
-try {
-  dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
-} catch { /* some runtimes don't allow this; ignore */ }
+// Windows DNS workaround: Node's fetch() uses its own internal resolver that
+// bypasses dns.setServers(). When the system DNS fails for a domain (common on
+// some Chinese ISP DNS for open.bigmodel.cn), fetch hard-fails. We pre-resolve
+// the hostname via Google DNS (dns.Resolver with 8.8.8.8) and connect by IP
+// with a Host header override — bypassing the broken resolver entirely.
+//
+// KEY FIX: many Chinese ISP DNS servers return ONLY IPv6 (AAAA) records for
+// open.bigmodel.cn, but the local network doesn't route IPv6 properly →
+// fetch() times out. We force IPv4 resolution via resolve4() only.
+const _resolver = new dns.Resolver();
+_resolver.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
+const _dnsCache = new Map(); // host -> { ip, ts }
+const DNS_CACHE_TTL = 300_000; // 5 min
+
+async function resolveHost(hostname) {
+  // skip for IPs and localhost
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname === "localhost") return null;
+  // check cache
+  const cached = _dnsCache.get(hostname);
+  if (cached && Date.now() - cached.ts < DNS_CACHE_TTL) return cached.ip;
+  try {
+    // Force IPv4 ONLY (resolve4) — avoids broken IPv6 routing that causes
+    // intermittent timeouts on networks that return AAAA records but can't
+    // actually route IPv6 traffic.
+    const ips = await _resolver.resolve4(hostname);
+    if (ips && ips.length > 0) {
+      _dnsCache.set(hostname, { ip: ips[0], ts: Date.now() });
+      return ips[0];
+    }
+  } catch { /* fall through to normal fetch */ }
+  return null; // null = let fetch use its normal resolver
+}
 
 // Read env lazily (at call time) rather than caching at module load, so the
 // config is correct regardless of import ordering vs. dotenv, and so tests can
@@ -81,12 +107,22 @@ export async function chatCompletionMessages(messages, opts = {}) {
     };
   }
   const key = apiKey();
+  const url = new URL(`${baseUrl()}/chat/completions`);
+  // Pre-resolve the hostname via Google DNS to bypass broken local DNS
+  // (common Windows issue where fetch() can't resolve .cn domains).
+  const ip = await resolveHost(url.hostname);
+  const fetchUrl = ip
+    ? `${url.protocol}//${ip}:${url.port || 443}${url.pathname}`
+    : url.toString();
+  const extraHeaders = ip ? { Host: url.hostname } : {};
+
   let res;
   try {
-    res = await fetch(`${baseUrl()}/chat/completions`, {
+    res = await fetch(fetchUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...extraHeaders,
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
       },
       body: JSON.stringify({
@@ -96,6 +132,8 @@ export async function chatCompletionMessages(messages, opts = {}) {
         max_tokens: maxTokens,
       }),
       signal: AbortSignal.timeout(timeoutMs),
+      // When connecting by IP, we need TLS to use the original hostname for SNI.
+      ...(ip ? { agent: new https.Agent({ servername: url.hostname }) } : {}),
     });
   } catch (err) {
     // Network-level failure (DNS, connection refused, timeout). Degrade
@@ -104,6 +142,9 @@ export async function chatCompletionMessages(messages, opts = {}) {
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
+    if (res.status === 429) {
+      throw new Error("LLM_RATE_LIMITED: The GLM API rate limit was hit. Wait a few seconds between requests, or upgrade your plan.");
+    }
     throw new Error(`LLM ${res.status}: ${txt.slice(0, 200)}`);
   }
   const data = await res.json();
