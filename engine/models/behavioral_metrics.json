@@ -1,0 +1,6 @@
+{
+  "accuracy": 1.0,
+  "normal_f1": 1.0,
+  "anomaly_f1": 1.0,
+  "macro_f1": 1.0
+}

@@ -11,10 +11,11 @@ __pycache__/
 # build output
 client/dist/
 
-# trained artifacts (large, regenerable) — keep seed datasets, ignore model blobs
-engine/models/*.joblib
-engine/models/*.pt
-engine/models/*.json
+# trained artifacts — committed (small, ~1.8M total) so the app works on clone.
+# Re-train with: python engine/behavioral/generate_behavioral_data.py
+# engine/models/*.joblib
+# engine/models/*.pt
+# engine/models/*.json
 engine/biometric/*.npz
 
 # env (secrets — never commit)

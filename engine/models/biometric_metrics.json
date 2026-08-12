@@ -1,0 +1,9 @@
+{
+  "test_support": 1280,
+  "genuine_f1": 0.964,
+  "impostor_f1": 0.96,
+  "macro_f1": 0.962,
+  "accuracy": 0.963,
+  "lstm_embed_dim": 16,
+  "feature_count": 35
+}
