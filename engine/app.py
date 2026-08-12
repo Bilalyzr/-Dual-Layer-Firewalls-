@@ -312,3 +312,120 @@ def get_shap(request_id: str) -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# --------------------------------------------------------------------------- #
+# Behavioral Risk Analysis API (PRD §42 — Layer 2 replacement)
+# --------------------------------------------------------------------------- #
+class BehaviorRequest(BaseModel):
+    user_id: str = "anon"
+    role: str = "user"
+    device_id: str = ""
+    device_type: str = "laptop"
+    device_trust: float = 0.5
+    registered_device: bool = True
+    device_change: bool = False
+    country: str = "IN"
+    region: str = "TN"
+    location_change: bool = False
+    location_frequency: float = 0.8
+    hour: int | None = None
+    working_hours: bool | None = None
+    working_day: bool | None = None
+    session_id: str = ""
+    session_duration: float = 600.0
+    request_count: int = 5
+    failed_auth_count: int = 0
+    resource_id: str = ""
+    resource_type: str = "web_page"
+    resource_sensitivity: str = "low"
+    request_frequency: float = 10.0
+    resource_access_frequency: float = 5.0
+    prompt_text: str = ""
+    failed_auth_attempt: bool = False  # signal a failed authentication for escalation
+
+
+@app.post("/behavior/analyze")
+def behavior_analyze(req: BehaviorRequest) -> dict[str, Any]:
+    """Run the full behavioral risk pipeline — returns the Decision Object (PRD §29)."""
+    from .behavioral.telemetry import Telemetry, from_dict
+    from .behavioral.pipeline import analyze
+
+    # Handle failed-auth escalation
+    if req.failed_auth_attempt:
+        from .behavioral.response import escalate_failures
+        escalate_failures(req.user_id)
+
+    telemetry = from_dict(req.model_dump())
+    result = analyze(telemetry)
+    return result
+
+
+@app.post("/behavior/event")
+def behavior_event(req: BehaviorRequest) -> dict[str, Any]:
+    """Submit a behavioral/security event (PRD §27 POST /event).
+
+    Analyzes the event through the full pipeline and persists it (FR-12).
+    Same engine as /analyze; the decision is recorded to the event store.
+    """
+    from .behavioral.telemetry import from_dict
+    from .behavioral.pipeline import analyze
+
+    if req.failed_auth_attempt:
+        from .behavioral.response import escalate_failures
+        escalate_failures(req.user_id)
+
+    telemetry = from_dict(req.model_dump())
+    result = analyze(telemetry)  # analyze() records to the store
+    return {"status": "recorded", "decision": result}
+
+
+@app.get("/behavior/events")
+def behavior_events(user_id: str | None = None, risk_level: str | None = None, limit: int = 100) -> dict[str, Any]:
+    """Retrieve behavioral security events (PRD §27 GET /events)."""
+    from .behavioral.store import query
+    events = query(user_id=user_id, risk_level=risk_level, limit=limit)
+    return {"count": len(events), "events": events}
+
+
+@app.get("/behavior/stats")
+def behavior_stats() -> dict[str, Any]:
+    """Behavioral Risk Command Center aggregates (PRD §25)."""
+    from .behavioral.store import stats
+    return stats()
+
+
+@app.get("/behavior/profile/{user_id}")
+def behavior_profile(user_id: str) -> dict[str, Any]:
+    from .behavioral.baseline import get_baseline
+    b = get_baseline(user_id)
+    return b.to_dict()
+
+
+@app.get("/behavior/risk/{user_id}")
+def behavior_risk(user_id: str) -> dict[str, Any]:
+    """Current + historical risk state for a user (PRD §27 GET /risk)."""
+    from .behavioral.response import get_failure_count
+    from .behavioral.store import query
+    history = query(user_id=user_id, limit=50)
+    current = history[0] if history else None
+    return {
+        "user_id": user_id,
+        "failed_auth_count": get_failure_count(user_id),
+        "current_risk_level": current["risk_level"] if current else "LOW",
+        "current_risk_score": current["risk_score"] if current else 0.0,
+        "history": history,
+    }
+
+
+@app.post("/behavior/recalculate")
+def behavior_recalculate(req: BehaviorRequest) -> dict[str, Any]:
+    """Recalculate the behavioral baseline from a confirmed-genuine event."""
+    from .behavioral.telemetry import from_dict
+    from .behavioral.baseline import update_baseline
+    from .behavioral.response import reset_failures
+
+    reset_failures(req.user_id)  # successful genuine event resets failures
+    t = from_dict(req.model_dump())
+    profile = update_baseline(req.user_id, t)
+    return {"status": "updated", "profile": profile}

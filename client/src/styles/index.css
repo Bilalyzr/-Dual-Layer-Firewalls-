@@ -992,3 +992,25 @@ summary:focus-visible,
 .sla-warn { color: var(--yellow); }
 .sla-bad { color: var(--red); }
 .sla-anomalies { list-style: none; margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Behavioral Risk Analysis UI (PRD §34-38) */
+.behavioral-metrics-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 12px 0; }
+@media (max-width:600px){ .behavioral-metrics-grid{grid-template-columns:repeat(2,1fr);} }
+.behavioral-metric { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 8px 6px; text-align: center; }
+.behavioral-metric-val { font-family: var(--mono); font-size: 16px; font-weight: 700; text-shadow: 0 0 8px currentColor; }
+.behavioral-metric-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+.behavioral-chart { margin: 8px 0; padding: 6px 0; border-top: 1px dashed rgba(80,220,255,0.1); }
+.decision-json { background: rgba(2,6,16,0.8); border: 1px solid rgba(80,220,255,0.1); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 10px; color: var(--cyan); margin-top: 6px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+.risk-cards-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+@media (max-width:500px){ .risk-cards-grid{grid-template-columns:repeat(2,1fr);} }
+.risk-card { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 10px 6px; text-align: center; }
+.risk-card-val { font-family: var(--mono); font-size: 22px; font-weight: 700; text-shadow: 0 0 10px currentColor; }
+.risk-card-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+.risk-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
+.risk-table th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.risk-table td { padding: 6px 4px; border-bottom: 1px solid rgba(80,220,255,0.06); color: var(--text); }
+.risk-table tr:hover td { background: rgba(0,240,255,0.04); }
+.profile-detail-row td { background: rgba(0,240,255,0.03) !important; }
+.profile-detail { padding: 8px; border-radius: 6px; background: rgba(2,6,16,0.5); }
+.profile-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 4px 12px; font-size: 11px; }
+.profile-grid .muted { font-size: 9px; text-transform: uppercase; }

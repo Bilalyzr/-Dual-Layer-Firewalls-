@@ -10,6 +10,7 @@ export function useThreatStream(max = 50) {
   const [threats, setThreats] = useState([]);
   const [biometric, setBiometric] = useState([]);
   const [agentEvents, setAgentEvents] = useState([]);
+  const [behavior, setBehavior] = useState([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -40,6 +41,12 @@ export function useThreatStream(max = 50) {
         push(setAgentEvents, payload);
       } catch {}
     });
+    es.addEventListener("behavior", (e) => {
+      try {
+        const { payload } = JSON.parse(e.data);
+        push(setBehavior, payload);
+      } catch {}
+    });
     // Enrichment lands out-of-band (geoip/asn/reputation) after the threat is
     // already on screen. Merge it into the matching threat(s) by source IP so the
     // country / org appears next to the address without dropping the live item.
@@ -62,5 +69,5 @@ export function useThreatStream(max = 50) {
     return () => es.close();
   }, [max]);
 
-  return { threats, biometric, agentEvents, connected };
+  return { threats, biometric, agentEvents, behavior, connected };
 }

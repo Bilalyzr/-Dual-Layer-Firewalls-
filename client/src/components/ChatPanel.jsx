@@ -1,12 +1,9 @@
 /**
  * ChatPanel — the LLM chat surface that sits behind the firewall.
- *
- * The prompt input is wired to useKeystrokeCapture so biometric telemetry is
- * gathered as the user types. Send posts to /api/chat, which runs the full
- * Layer-1 pipeline; blocked responses are surfaced distinctly.
+ * Send posts to /api/chat, which runs the full Layer-1 pipeline; blocked
+ * responses are surfaced distinctly.
  */
 import { useState } from "react";
-import { useKeystrokeCapture } from "../hooks/useKeystrokeCapture";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
 
@@ -16,7 +13,6 @@ export default function ChatPanel({ userId }) {
   const [busy, setBusy] = useState(false);
   const [stepUp, setStepUp] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState(null);
-  const { ref, trust } = useKeystrokeCapture({ userId, enabled: true });
 
   const send = async (override) => {
     const text = (typeof override === "string" ? override : input).trim();
@@ -135,9 +131,6 @@ export default function ChatPanel({ userId }) {
       />
       <div className="panel-head">
         <h2>LLM Chat <small>(behind AI Firewall)</small></h2>
-        <span className={`pill ${trust.cold_start ? "pill-warn" : trust.trust_score >= 70 ? "pill-ok" : "pill-bad"}`}>
-          trust {Math.round(trust.trust_score ?? 100)}
-        </span>
       </div>
 
       <div className="chat-log">
@@ -158,9 +151,8 @@ export default function ChatPanel({ userId }) {
       </div>
 
       <textarea
-        ref={ref}
         className="chat-input"
-        placeholder="Type a prompt… (keystroke telemetry is captured)"
+        placeholder="Type a prompt…"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={onKeyDown}

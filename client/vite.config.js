@@ -1,10 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The proxy target is configurable. Default matches the local dev ports in
-// .env.local (proxy on 4001). Docker sets PROXY_URL=http://proxy:4000.
 const target = process.env.PROXY_URL || "http://localhost:4001";
-// Match the dashboard port in .env.local / README (5174); overridable via env.
 const port = parseInt(process.env.CLIENT_PORT || "5174", 10);
 
 export default defineConfig({

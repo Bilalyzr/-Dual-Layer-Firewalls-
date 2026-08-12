@@ -1,76 +1,73 @@
 /**
  * App — SecOps dashboard shell.
  *
- * Layout: left = LLM chat behind the firewall (with keystroke capture);
- * right = live threat feed, biometric monitor, metrics, agent audit trail.
- * Top status bar shows operational modes + service health.
- *
- * Behavioral capture beyond keystroke (mouse / touch / device fingerprint) is
- * gated behind explicit per-category consent (Epic I) — the ConsentBanner drives
- * the `consent` map and nothing captures until the matching toggle is on.
+ * Layer 2 = AI-Driven Continuous Behavioral Risk Analysis (context-centric):
+ *   identity + device + location + time + resource + activity → One-Class SVM → RF → LOW/MEDIUM/HIGH
+ * The old keystroke/mouse/touch biometric system is removed from the live UI
+ * (files preserved on disk for tests + future Phase 4 optional signals).
  */
 import { useState, useEffect } from "react";
 import { ensureSession } from "./lib/api";
 import { collectFingerprint, sendFingerprint } from "./lib/fingerprint";
 import { resolvePublicIp } from "./lib/publicIp";
-import { hasConsent } from "./lib/consent";
-import { useMouseCapture } from "./hooks/useMouseCapture";
-import { useTouchCapture } from "./hooks/useTouchCapture";
 import Logo from "./components/Logo.jsx";
 import BootLoader from "./components/BootLoader.jsx";
 import StatusBar from "./components/StatusBar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import ThreatFeed from "./components/ThreatFeed.jsx";
-import BiometricMonitor from "./components/BiometricMonitor.jsx";
 import MetricsPanel from "./components/MetricsPanel.jsx";
 import AgentAuditTrail from "./components/AgentAuditTrail.jsx";
-import ConsentBanner from "./components/ConsentBanner.jsx";
 import SlaPanel from "./components/SlaPanel.jsx";
+import LoginScreen from "./components/LoginScreen.jsx";
+import BehavioralRiskDashboard from "./components/BehavioralRiskDashboard.jsx";
+import RiskSummary from "./components/RiskSummary.jsx";
+import RiskTable from "./components/RiskTable.jsx";
+import FaceAuthModal from "./components/FaceAuthModal.jsx";
 
 export default function App() {
-  const [userId] = useState(() => {
-    const key = "dlf.userId";
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = "user-" + Math.random().toString(36).slice(2, 7);
-      localStorage.setItem(key, id);
-    }
-    return id;
+  const [authUser, setAuthUser] = useState(() => {
+    const saved = localStorage.getItem("dlf.authUser");
+    return saved ? JSON.parse(saved) : null;
   });
 
+  const [userId, setUserId] = useState(() => localStorage.getItem("dlf.userId") || "");
+
+  // ALL hooks must be called BEFORE any early return (React rules of hooks).
   const [booting, setBooting] = useState(true);
-  // Per-category consent grants (Epic I). Seeded from the local mirror so gating
-  // is correct on first paint; ConsentBanner re-syncs from the server + updates.
-  const [consent, setConsent] = useState(() => ({
-    mouse: hasConsent("mouse"),
-    touch: hasConsent("touch"),
-    fingerprint: hasConsent("fingerprint"),
-  }));
+  const [faceModal, setFaceModal] = useState(null); // null | "enroll" | "verify"
 
-  // Capture hooks only run when their consent toggle is on — the `enabled` flag
-  // fully attaches/detaches the underlying listeners.
-  useMouseCapture({ userId, enabled: Boolean(consent.mouse) });
-  useTouchCapture({ userId, enabled: Boolean(consent.touch) });
-
-  // Bootstrap a signed session token on first load (Tier 2 EPIC A), binding it
-  // to the persisted userId so existing keystroke baselines carry over.
   useEffect(() => {
+    if (!authUser) return;
     ensureSession(userId).catch(() => {});
-    // Warm public-IP discovery so the first detection already carries a real
-    // source IP (local-dev demo; inert in prod — see lib/publicIp.js).
     resolvePublicIp().catch(() => {});
-  }, [userId]);
+  }, [userId, authUser]);
 
-  // Device fingerprint is one-shot: collect + send once when consent is granted.
   useEffect(() => {
-    if (!consent.fingerprint) return;
+    if (!authUser) return;
     let alive = true;
     (async () => {
       const fp = await collectFingerprint(true);
       if (alive) await sendFingerprint(fp, userId);
     })();
     return () => { alive = false; };
-  }, [consent.fingerprint, userId]);
+  }, [userId, authUser]);
+
+  const handleLogin = (data) => {
+    localStorage.setItem("dlf.authUser", JSON.stringify(data.user));
+    localStorage.setItem("dlf.userId", data.user.username);
+    setAuthUser(data.user);
+    setUserId(data.user.username);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("dlf.authUser");
+    setAuthUser(null);
+  };
+
+  // Show login screen if not authenticated — AFTER all hooks.
+  if (!authUser) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   return (
     <>
@@ -81,11 +78,18 @@ export default function App() {
           <div className="brand-text">
             <h1>Dual-Layer <span className="accent">AI Firewall</span></h1>
             <div className="sub">
-              SEMANTIC PROMPT-INJECTION DEFENSE · BEHAVIORAL KEYSTROKE AUTHENTICATION
+              SEMANTIC PROMPT-INJECTION DEFENSE · BEHAVIORAL RISK ANALYSIS
             </div>
           </div>
         </div>
-        <div className="user">SESSION <code>{userId}</code></div>
+        <div className="user">
+          <span style={{ color: "var(--cyan)" }}>{authUser?.role || "user"}</span>
+          {" "}<code>{userId}</code>
+          {/* Face auth temporarily disabled — re-enable by uncommenting the buttons below */}
+          {/* <button onClick={() => setFaceModal("enroll")} style={{ marginLeft: 10, background: "none", border: "1px solid var(--panel-edge)", color: "var(--cyan)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>👤 ENROLL FACE</button>
+          <button onClick={() => setFaceModal("verify")} style={{ marginLeft: 6, background: "none", border: "1px solid var(--panel-edge)", color: "var(--ok)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>🔐 VERIFY FACE</button> */}
+          <button onClick={handleLogout} style={{ marginLeft: 10, background: "none", border: "1px solid var(--panel-edge)", color: "var(--muted)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>LOGOUT</button>
+        </div>
       </header>
 
       <StatusBar />
@@ -96,18 +100,27 @@ export default function App() {
           <MetricsPanel />
         </div>
         <div className="col col-right">
+          <RiskSummary />
+          <BehavioralRiskDashboard userId={userId} />
+          <RiskTable />
           <ThreatFeed />
-          <BiometricMonitor userId={userId} />
           <SlaPanel />
           <AgentAuditTrail />
         </div>
       </main>
 
-      <ConsentBanner userId={userId} onChange={setConsent} />
-
       <footer className="footer">
         DUAL-LAYER AI FIREWALL
       </footer>
+
+      {faceModal && (
+        <FaceAuthModal
+          mode={faceModal}
+          userId={userId}
+          onVerified={() => setFaceModal(null)}
+          onCancel={() => setFaceModal(null)}
+        />
+      )}
     </>
   );
 }
