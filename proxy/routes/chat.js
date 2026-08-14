@@ -32,6 +32,50 @@ const router = Router();
 // as firewall/mlClient.js).
 const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
 
+// Prompt injection → Behavioral Risk Analysis updates DIRECTLY (PRD §35):
+// run the Layer-2 pipeline on the hostile-session context and publish the
+// decision to the SSE stream so the dashboard's EXPLAINABILITY block shows
+// every triggered warning (new device/location, off-hours, sensitive
+// resource, frequency above baseline, prior failed auths, anomaly score).
+// Fire-and-forget from EVERY block path — never adds chat-path latency.
+function reportInjectionBehavior({ userId, sessionId, prompt }) {
+  fetch(`${ENGINE_URL}/behavior/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      // Sanitize: express-session yields null (not "") when absent, and a
+      // JSON null fails the engine's Pydantic validation with a 422.
+      user_id: String(userId || "anon"),
+      session_id: String(sessionId || ""),
+      role: "user",
+      device_id: "unknown-x7",
+      device_type: "mobile",
+      device_trust: 0.1,
+      registered_device: false,
+      device_change: true,
+      location_change: true,
+      location_frequency: 0.05,
+      hour: 3,
+      working_hours: false,
+      working_day: false,
+      resource_type: "database",
+      resource_sensitivity: "critical",
+      request_frequency: 150,
+      resource_access_frequency: 60,
+      failed_auth_count: 2,
+      prompt_text: prompt,
+      prompt_injection: true,
+    }),
+    signal: AbortSignal.timeout(5000),
+  })
+    .then(async (r) => {
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data?.decision) publish("behavior", { ...data.decision, ts: new Date() });
+    })
+    .catch(() => { /* behavioral feed must never break the chat path */ });
+}
+
 // Read mode/threshold per-request so SecOps can toggle (and tests can vary it)
 // without a process restart.
 const mode = () => (process.env.FIREWALL_MODE || "shadow").toLowerCase(); // shadow | enforce
@@ -122,6 +166,7 @@ router.post("/", async (req, res) => {
     // Epic D: teach the signature cache so this attack shape is caught pre-ML next time.
     await recordSignature(fp.signature, { category, label, techniques: fp.techniques });
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
+    reportInjectionBehavior({ userId, sessionId, prompt });
     return res.json({
       blocked: true,
       reason: "blocked by AI firewall",
@@ -171,6 +216,7 @@ router.post("/", async (req, res) => {
       if (forensics?.clientIp) await recordOffense(forensics.clientIp);
       await recordSignature(fp.signature, { category, label: sigHit.label, techniques: fp.techniques });
       console.warn(`[firewall] ENFORCE BLOCK [${category}] signature ${fp.signature} (ML short-circuit)`);
+      reportInjectionBehavior({ userId, sessionId, prompt });
       return res.json({
         blocked: true,
         reason: "blocked by AI firewall",
@@ -276,45 +322,7 @@ router.post("/", async (req, res) => {
     const stored = await insertAlert(alert);
     publish("threat", alert);
 
-    // Prompt injection → Behavioral Risk Analysis updates DIRECTLY (PRD §35):
-    // run the Layer-2 pipeline on the hostile-session context and publish the
-    // decision to the SSE stream so the dashboard's EXPLAINABILITY block shows
-    // every triggered warning (new device/location, off-hours, sensitive
-    // resource, frequency above baseline, prior failed auths, anomaly score).
-    // Fire-and-forget: never adds latency to the chat path.
-    fetch(`${ENGINE_URL}/behavior/event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: userId,
-        session_id: sessionId,
-        role: "user",
-        device_id: "unknown-x7",
-        device_type: "mobile",
-        device_trust: 0.1,
-        registered_device: false,
-        device_change: true,
-        location_change: true,
-        location_frequency: 0.05,
-        hour: 3,
-        working_hours: false,
-        working_day: false,
-        resource_type: "database",
-        resource_sensitivity: "critical",
-        request_frequency: 150,
-        resource_access_frequency: 60,
-        failed_auth_count: 2,
-        prompt_text: prompt,
-        prompt_injection: true,
-      }),
-      signal: AbortSignal.timeout(5000),
-    })
-      .then(async (r) => {
-        if (!r.ok) return;
-        const data = await r.json();
-        if (data?.decision) publish("behavior", { ...data.decision, ts: new Date() });
-      })
-      .catch(() => { /* behavioral feed must never break the chat path */ });
+    reportInjectionBehavior({ userId, sessionId, prompt });
 
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
     if (forensics?.clientIp) await recordOffense(forensics.clientIp);
