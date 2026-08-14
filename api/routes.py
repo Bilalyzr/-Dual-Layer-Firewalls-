@@ -70,14 +70,40 @@ def admin_events(limit: int = 50):
 class RealtimeSampleRequest(ChatCompletionRequest):
     label: int = 1          # 1 = threat, 0 = benign
     source: str = "external"
+    risk: float = 0.0       # caller's own risk estimate (poisoning guard)
 
 
 @router.post("/realtime/sample")
 def realtime_sample(req: RealtimeSampleRequest):
-    """Push a labeled REAL sample (used by the legacy proxy and manual runs)."""
-    from services import realtime_learner
+    """Push a labeled REAL sample (used by the legacy proxy and manual runs).
+
+    Poisoning guard: a BENIGN label carrying risk >= 0.5 is a near-miss
+    attack the caller was lucky to allow — training on it as benign makes
+    the model forget the attack. Those go to the vulnerability queue for
+    review instead of the training store.
+    """
+    from services import audit_log, realtime_learner
 
     text = req.effective_prompt()
+    if req.label == 0:
+        # Two poisoning guards for benign-labeled pushes:
+        # 1) caller-reported risk says near-miss, or
+        # 2) LABEL CONFLICT — our own live classifier rates the text as a
+        #    likely attack (observed live: a caller's blind spot re-taught
+        #    the model that a blocked attack was benign). Queue for review.
+        conflict = False
+        try:
+            from guardrails.input_filter import classify as _classify
+
+            conflict = _classify(text).intent_score >= 0.7
+        except Exception:
+            pass
+        if req.risk >= 0.5 or conflict:
+            audit_log.record_vulnerability(
+                prompt_text=text, layer="label-conflict" if conflict else "proxy-nearmiss",
+                risk=max(req.risk, 0.7 if conflict else req.risk), source="sampling")
+            return {"status": "queued_for_review", "label": req.label,
+                    "reason": "label_conflict" if conflict else "near_miss"}
     stored = realtime_learner.record(text=text, label=req.label,
                                      source=req.source or "external")
     return {"status": "recorded" if stored else "duplicate_ignored",

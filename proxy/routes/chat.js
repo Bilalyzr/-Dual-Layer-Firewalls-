@@ -36,11 +36,11 @@ const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
 // allowed -> benign) to the v2 firewall's training store so the model keeps
 // learning from live site traffic. Fire-and-forget; off when unreachable.
 const REALTIME_API = process.env.REALTIME_API_URL || "http://localhost:8020";
-function reportRealtimeSample(prompt, label) {
+function reportRealtimeSample(prompt, label, risk = 0) {
   fetch(`${REALTIME_API}/realtime/sample`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: String(prompt || "").slice(0, 4000), label, source: "proxy-traffic" }),
+    body: JSON.stringify({ prompt: String(prompt || "").slice(0, 4000), label, risk, source: "proxy-traffic" }),
     signal: AbortSignal.timeout(3000),
   }).catch(() => {});
 }
@@ -308,8 +308,9 @@ router.post("/", async (req, res) => {
     category,
   };
 
-  // Real-time learning: allowed traffic is the benign class.
-  reportRealtimeSample(prompt, 0);
+  // Real-time learning: allowed traffic is the benign class (with risk so
+  // the training store can refuse near-miss "benign" pushes).
+  reportRealtimeSample(prompt, 0, threatProb);
 
   // ---- Decision: shadow logs but does not block. ----
   const willBlock = isThreat && MODE === "enforce";

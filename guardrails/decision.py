@@ -38,6 +38,26 @@ def evaluate(sanitized: SanitizeResult, intent: IntentResult,
     if intent.intent_score >= block_threshold():
         return Decision(True, "cumulative risk exceeded", round(risk, 4), "intent")
 
+    # Defense-in-depth (trial requirement: ANY user-crafted attack blocks):
+    # a single overwhelming signal OR corroborated signals are enough —
+    # novel phrasings that dodge the classifier alone still get caught.
+    sanitizer_hit = any(r.startswith("jailbreak") for r in sanitized.removed)
+    if injection_weightage >= 0.95:  # saturated attack vocabulary (e.g. 0.98)
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sentiment")
+    if injection_weightage >= 0.5 and intent.intent_score >= 0.5:
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sentiment+intent")
+    if session.attack_proximity >= 0.85 and intent.intent_score >= 0.5:
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "proximity+intent")
+    # L1 caught an instruction-override pattern (incl. obfuscated forms) and
+    # the semantic score is at least ambivalent — benign users don't leetspeak
+    # "ignore prior constraints", so the pair is damning together.
+    if sanitizer_hit and intent.intent_score >= 0.4:
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sanitizer+intent")
+    # A smuggled base64 payload that DECODES to an instruction override is an
+    # attack outright — no benign reason to encode "ignore all rules".
+    if any(r.startswith("base64-payload") for r in sanitized.removed):
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sanitizer")
+
     # L3 — multi-turn cumulative risk (the diagram's block reason verbatim).
     if session.blocked:
         return Decision(True, "cumulative risk exceeded", round(risk, 4), "behavioral")

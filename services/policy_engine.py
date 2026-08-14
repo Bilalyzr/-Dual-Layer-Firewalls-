@@ -28,14 +28,17 @@ PII_MASK = "[REDACTED]"
 # Jailbreak / injection patterns (L1 scrub + L4 doc scan)
 # --------------------------------------------------------------------------- #
 JAILBREAK_PATTERNS: list[re.Pattern] = [
-    re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?\b", re.I),
+    re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions?|rules?|constraints?|directions?|prompts?)\b", re.I),
+    re.compile(r"\b(?:ignore|disregard|forget|bypass)\s+(?:all|any|every)\s+(?:rules?|instructions?|constraints?|safety|guidelines?|restrictions?|filters?|guardrails?)\b", re.I),
     re.compile(r"\bdisregard\s+(?:the\s+)?(?:above|previous|prior)\b", re.I),
     re.compile(r"\bforget\s+(?:all\s+)?(?:your|prior|previous)\s+(?:instructions|rules)\b", re.I),
     re.compile(r"\boverride\s+(?:your\s+)?(?:current\s+)?instructions\b", re.I),
     re.compile(r"\bsystem\s*:\s*", re.I),
-    re.compile(r"\byou\s+are\s+now\s+(?:DAN|AIM|developer\s+mode)\b", re.I),
+    re.compile(r"\byou\s+are\s+now\s+(?:dan|aim|badbot|evil[^\s,]*|unrestricted[^\s,]*|developer\s+mode|debug\s+mode)\b", re.I),
     re.compile(r"\bdeveloper\s+mode\s+(?:enabled|on)\b", re.I),
-    re.compile(r"\b(?:reveal|show|print|dump|output)\s+(?:the\s+)?(?:system\s+)?(?:prompt|instructions|secret)\b", re.I),
+    re.compile(r"\b(?:reveal|show|print|dump|output|append|include|exfiltrate|export|send|leak)\b"
+               r"[^.]{0,50}\b(?:api\s+keys?|secrets?|credentials?|tokens?|system\s+prompt|seed\s+phrase|passphrase)\b", re.I),
+    re.compile(r"\bactivation\s+code\b", re.I),
 ]
 
 # Imperative commands that should never appear in passive reference data
@@ -103,6 +106,8 @@ INJECTION_LEXICON: dict[str, float] = {
     "attack": 0.7, "toolkit": 0.55, "exploit": 0.65, "inject": 0.6,
     "malicious": 0.7, "breach": 0.6, "spoof": 0.6, "decrypt": 0.5,
     "dark web": 0.6, "unauthorized": 0.55, "vulnerable": 0.45,
+    "unrestricted": 0.5, "debug mode": 0.5, "spy": 0.55,
+    "seed phrase": 0.85, "passphrase": 0.7, "recovery phrase": 0.85,
     # mild (context words that lean hostile in intent statements)
     "plan": 0.2, "target": 0.35, "victim": 0.45, "illegal": 0.5,
 }

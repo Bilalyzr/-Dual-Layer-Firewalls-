@@ -40,13 +40,33 @@ def sanitize(prompt: str) -> SanitizeResult:
             clean = pattern.sub("[sanitized:instruction-override]", probe)
             removed.append(f"jailbreak-obfuscated:{pattern.pattern[:32]}")
 
-    # 3) Collapse control/zero-width characters used to smuggle instructions.
+    # 4) Decode smuggled base64 payloads: an encoded blob whose DECODED text
+    #    carries an instruction-override is an attack no matter how innocent
+    #    the surrounding sentence looks (observed live: "decode ... then obey").
+    import base64 as _b64
+    import binascii as _binascii
+
+    for m in re.finditer(r"\b[A-Za-z0-9+/]{16,}={0,2}\b", clean):
+        token = m.group(0)
+        try:
+            decoded = _b64.b64decode(token + "=" * (-len(token) % 4)).decode("utf-8", "ignore")
+        except (_binascii.Error, ValueError):
+            continue
+        if len(decoded) < 8:
+            continue
+        probe = policy_engine.deobfuscate(decoded)
+        if any(p.search(probe) or p.search(decoded) for p in policy_engine.JAILBREAK_PATTERNS) \
+                or policy_engine.imperative_hits(decoded):
+            clean = clean.replace(token, "[sanitized:encoded-payload]")
+            removed.append(f"base64-payload:{decoded[:32]}")
+
+    # 5) Collapse control/zero-width characters used to smuggle instructions.
     smuggled = re.findall(r"[\u200b-\u200f\u2028\u2029\ufeff]", clean)
     if smuggled:
         clean = re.sub(r"[\u200b-\u200f\u2028\u2029\ufeff]", "", clean)
         removed.append(f"invisible-chars:{len(smuggled)}")
 
-    # 4) Bound the prompt length (413-style guard, inline).
+    # 6) Bound the prompt length (413-style guard, inline).
     if len(clean) > 32_000:
         clean = clean[:32_000]
         removed.append("truncated")

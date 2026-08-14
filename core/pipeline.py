@@ -230,18 +230,25 @@ def _finish(request_id: str, user_id: str, req: ChatCompletionRequest,
     # Real-time learning capture (trial-update): the FINAL verdict labels the
     # real prompt — blocked => threat, allowed => benign — so the model keeps
     # training on live traffic, never a predefined set.
+    # POISONING GUARD: allowed-but-risky traffic (0.5..0.9) is NOT stored as
+    # benign — those are near-miss attacks, and training on them as benign
+    # makes the model FORGET the attack (observed live). Borderline traffic
+    # goes to the 'sampling' vulnerability queue for review instead; only
+    # confident allows teach the benign class.
     if training_text:
-        try:
-            from services import realtime_learner
+        confident_benign = decision_label != "block" and risk < 0.5
+        if decision_label == "block" or confident_benign:
+            try:
+                from services import realtime_learner
 
-            realtime_learner.record(
-                text=training_text,
-                label=1 if decision_label == "block" else 0,
-                source="realtime",
-                scores={"risk": round(risk, 4)},
-            )
-        except Exception:
-            pass
+                realtime_learner.record(
+                    text=training_text,
+                    label=1 if decision_label == "block" else 0,
+                    source="realtime",
+                    scores={"risk": round(risk, 4)},
+                )
+            except Exception:
+                pass
     try:
         audit_log.record(
             request_id=request_id, user_id=user_id, session_id=req.session_id,

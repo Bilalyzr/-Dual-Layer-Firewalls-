@@ -100,6 +100,7 @@ class ClassifyResponse(BaseModel):
     degraded_reason: str = ""           # why the embedding path is degraded
     llmguard_risk: float = 0.0          # LLM Guard (Protect AI) risk score
     llmguard_detected: bool = False     # LLM Guard flagged injection
+    semantic_used: bool = False         # v2 MiniLM+XGBoost contributed to the score
 
 
 class ScoreRequest(BaseModel):
@@ -173,6 +174,23 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
     except Exception:
         pass
 
+    # Architecture-v2 semantic model (MiniLM + XGBoost, trained on real
+    # traffic + datasets). The site gate (0.65) is much lower than the v2
+    # gate (0.90), so the semantic score only contributes as a HIGH-CONFIDENCE
+    # kill-shot (>= 0.85) — mid-range semantic scores stay out to avoid
+    # importing the semantic model's borderline FPs into the site path.
+    # Fail-open when unavailable.
+    semantic_used = False
+    try:
+        from guardrails.input_filter import classify as _v2_classify
+
+        v2 = _v2_classify(req.text)
+        if v2.intent_score >= 0.85 and v2.intent_score > proba:
+            proba = v2.intent_score
+        semantic_used = v2.model_used == "semantic"
+    except Exception:
+        pass
+
     return ClassifyResponse(
         threat_probability=round(proba, 4),
         latency_ms=round(latency_ms, 3),
@@ -184,6 +202,7 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
         degraded_reason=degraded_reason,
         llmguard_risk=round(llmguard_risk, 4),
         llmguard_detected=bool(llmguard_detected),
+        semantic_used=semantic_used,
     )
 
 
