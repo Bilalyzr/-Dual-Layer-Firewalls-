@@ -72,3 +72,20 @@ def session_risk(user_id: str):
 def reset_session(user_id: str):
     behavioral.reset(user_id)
     return {"status": "reset", "user_id": user_id}
+
+
+# --------------------------------------------------------------------------- #
+# Trial-update #1: live word-injection scoring for display DURING input.
+# Pure-lexicon (no embedding/model) so the site can call it on every
+# debounced keystroke and render term-level polarity + prompt weightage.
+# --------------------------------------------------------------------------- #
+class SentimentScoreRequest(ChatCompletionRequest):
+    pass
+
+
+@router.post("/sentiment/score")
+def sentiment_score(req: SentimentScoreRequest):
+    from services.policy_engine import word_sentiment
+
+    text = req.effective_prompt() or ""
+    return word_sentiment(text)

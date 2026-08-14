@@ -63,10 +63,18 @@ def reset(user_id: str) -> None:
         pass
 
 
-def track(user_id: str, embedding: list[float], intent_score: float) -> SessionRiskResult:
-    """Record this turn and evaluate cumulative risk."""
+def track(user_id: str, embedding: list[float], intent_score: float,
+          injection_weightage: float = 0.0) -> SessionRiskResult:
+    """Record this turn and evaluate cumulative risk.
+
+    `injection_weightage` (trial-update #1/#3): the word-level attack weight
+    of this turn's prompt — blended into the per-turn risk, so prompts dense
+    with attack vocabulary escalate the cumulative behavioral risk even when
+    the semantic classifier score alone would not.
+    """
     prev = _load_state(user_id)
     history: list[list[float]] = list(prev.get("history", []))[-SETTINGS.session_window:]
+    sentiment_history: list[float] = list(prev.get("sentiment_history", []))[-SETTINGS.session_window:]
 
     # --- semantic drift from the session baseline ------------------------ #
     drift = 0.0
@@ -86,15 +94,25 @@ def track(user_id: str, embedding: list[float], intent_score: float) -> SessionR
     drift_risk = max(0.0, drift - SETTINGS.drift_free_tolerance) / max(
         1e-6, 1.0 - SETTINGS.drift_free_tolerance
     )
-    per_turn = max(intent_score, attack_proximity * 0.9, drift_risk * 0.8)
+    per_turn = max(
+        intent_score,
+        attack_proximity * 0.9,
+        drift_risk * 0.8,
+        injection_weightage,   # trial-update #3: saturated attack vocab = full-risk turn
+    )
     cumulative = SETTINGS.risk_decay * float(prev.get("cumulative", 0.0)) \
         + (1.0 - SETTINGS.risk_decay) * per_turn
+
+    # --- aggregate average sentiment across the session (trial-update #2) -- #
+    sentiment_history.append(round(float(injection_weightage), 4))
+    sentiment_avg = float(np.mean(sentiment_history)) if sentiment_history else 0.0
 
     history.append(list(embedding))
     _save_state(user_id, {
         "cumulative": cumulative,
         "count": int(prev.get("count", 0)) + 1,
         "history": history[-SETTINGS.session_window:],
+        "sentiment_history": sentiment_history[-SETTINGS.session_window:],
     })
 
     blocked = cumulative >= SETTINGS.cumulative_risk_threshold
@@ -107,6 +125,8 @@ def track(user_id: str, embedding: list[float], intent_score: float) -> SessionR
         drift=round(drift, 4),
         turn_count=int(prev.get("count", 0)) + 1,
         attack_proximity=round(attack_proximity, 4),
+        injection_weightage=round(float(injection_weightage), 4),
+        sentiment_avg=round(sentiment_avg, 4),
         blocked=blocked,
     )
 
@@ -114,8 +134,10 @@ def track(user_id: str, embedding: list[float], intent_score: float) -> SessionR
 def peek(user_id: str) -> SessionRiskResult:
     """Read-only view for GET /session/risk/{user_id}."""
     data = _load_state(user_id)
+    sentiment_history = data.get("sentiment_history", [])
     return SessionRiskResult(
         cumulative_risk=float(data.get("cumulative", 0.0)),
         drift=0.0,
         turn_count=int(data.get("count", 0)),
+        sentiment_avg=round(float(np.mean(sentiment_history)), 4) if sentiment_history else 0.0,
     )

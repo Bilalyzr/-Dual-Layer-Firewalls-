@@ -67,6 +67,22 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     layers["sanitizer"] = _layer_meta(removed=sanitized.removed)
     metrics.observe_latency("sanitizer", time.perf_counter() - t0)
 
+    # ---- Trial-update #1: word-injection sentiment (display during input) - #
+    t0 = time.perf_counter()
+    from services.policy_engine import word_sentiment
+
+    sentiment = word_sentiment(sanitized.sanitized_prompt)
+    layers["sentiment"] = _layer_meta(
+        negative_terms=sentiment["negative_terms"],
+        positive_terms=sentiment["positive_terms"],
+        negative_total=sentiment["negative_total"],
+        positive_total=sentiment["positive_total"],
+        weightage=sentiment["weightage"],
+        average_score=sentiment["average_score"],
+        matched_terms=sentiment["matched_terms"],
+    )
+    metrics.observe_latency("sentiment", time.perf_counter() - t0)
+
     # ---- L2: Semantic Intent Guardrail ----------------------------------- #
     t0 = time.perf_counter()
     intent = input_filter.classify(sanitized.sanitized_prompt)
@@ -79,12 +95,17 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
 
     # ---- L3: Behavioral Session Layer (stateful) -------------------------- #
     t0 = time.perf_counter()
-    session = behavioral.track(user_id, intent.embedding_vector, intent.intent_score)
+    session = behavioral.track(
+        user_id, intent.embedding_vector, intent.intent_score,
+        injection_weightage=sentiment["weightage"],   # trial-update #3
+    )
     layers["behavioral"] = _layer_meta(
         cumulative_risk=session.cumulative_risk,
         drift=session.drift,
         turn_count=session.turn_count,
         attack_proximity=session.attack_proximity,
+        injection_weightage=session.injection_weightage,
+        sentiment_avg=session.sentiment_avg,           # trial-update #2
         backend=redis_backend(),
     )
     metrics.observe_latency("behavioral", time.perf_counter() - t0)
@@ -101,13 +122,15 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     metrics.observe_latency("rag", time.perf_counter() - t0)
 
     # ---- L5: Pipeline Decision -------------------------------------------- #
-    dec = decision_mod.evaluate(sanitized, intent, session, rag)
+    dec = decision_mod.evaluate(sanitized, intent, session, rag,
+                                injection_weightage=sentiment["weightage"])
     if dec.blocked:
         behavioral.reset(user_id)          # PDF §3.3: terminate + reset session
         metrics.inc_layer_block(dec.layer)
         outcome = PipelineOutcome(
             blocked=True, status_code=403,
-            body=BlockedResponse(reason=dec.reason, risk_score=dec.risk_score).model_dump(),
+            body=BlockedResponse(reason=dec.reason, risk_score=dec.risk_score,
+                                 layers=layers).model_dump(),
         )
         return _finish(request_id, user_id, req, outcome, layers, client_ip,
                        t_start, decision_label="block", block_layer=dec.layer,

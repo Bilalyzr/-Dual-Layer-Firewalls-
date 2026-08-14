@@ -63,6 +63,9 @@ class BlockedResponse(BaseModel):
     error: str = "Request blocked by firewall"
     reason: str = "cumulative risk exceeded"
     risk_score: float = 0.0
+    # Layer breakdown (incl. word-injection sentiment) so the site can display
+    # WHY the block happened — trial-update #1 display requirement.
+    layers: dict[str, Any] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -85,7 +88,20 @@ class SessionRiskResult(BaseModel):
     drift: float = 0.0               # cosine distance from session baseline
     turn_count: int = 0
     attack_proximity: float = 0.0    # cosine sim to the known-attack centroid
+    injection_weightage: float = 0.0  # this turn's word-injection weight
+    sentiment_avg: float = 0.0        # aggregate average across the session
     blocked: bool = False
+
+
+class SentimentResult(BaseModel):
+    """Trial-update #1: word-level injection/relation scoring (display data)."""
+    negative_terms: list[dict] = Field(default_factory=list)   # [{term, weight}]
+    positive_terms: list[dict] = Field(default_factory=list)   # [{term, weight}]
+    negative_total: float = 0.0
+    positive_total: float = 0.0
+    weightage: float = 0.0    # prompt weightage 0..1 (negative-dominant)
+    average_score: float = 0.0  # aggregate average per matched term (signed)
+    matched_terms: int = 0
 
 
 class RagValidationResult(BaseModel):

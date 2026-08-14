@@ -23,12 +23,15 @@ class Decision:
 
 
 def evaluate(sanitized: SanitizeResult, intent: IntentResult,
-             session: SessionRiskResult, rag: RagValidationResult) -> Decision:
-    # Composite risk: the strongest signal any layer produced this turn.
+             session: SessionRiskResult, rag: RagValidationResult,
+             injection_weightage: float = 0.0) -> Decision:
+    # Composite risk: the strongest signal any layer produced this turn
+    # (trial-update #3: word-injection weightage is part of the composite).
     risk = max(
         intent.intent_score,
         session.cumulative_risk,
         rag.risk,
+        injection_weightage * 0.9,
     )
 
     # L2 — single-turn semantic kill-shot (PDF §3.3: instant termination).
