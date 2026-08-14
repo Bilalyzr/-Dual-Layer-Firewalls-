@@ -342,6 +342,7 @@ class BehaviorRequest(BaseModel):
     request_frequency: float = 10.0
     resource_access_frequency: float = 5.0
     prompt_text: str = ""
+    prompt_injection: bool = False  # Layer-1 flagged this prompt as an injection
     failed_auth_attempt: bool = False  # signal a failed authentication for escalation
 
 

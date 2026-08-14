@@ -49,6 +49,10 @@ class Telemetry:
     resource_access_frequency: float = 5.0  # resources/hour
     # Optional: raw prompt text for LLM context enrichment
     prompt_text: str = ""
+    # Layer-1 bridge: the firewall's classifier/heuristics flagged this
+    # prompt as an injection attempt (drives the §35 explainability reason
+    # and a risk boost — the injection IS the behavioral signal).
+    prompt_injection: bool = False
 
     def __post_init__(self):
         if not self.timestamp:

@@ -28,6 +28,10 @@ import { computeFingerprint, checkSignature, recordSignature } from "../firewall
 
 const router = Router();
 
+// Layer-1 → Layer-2 bridge: engine base for behavioral events (same default
+// as firewall/mlClient.js).
+const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
+
 // Read mode/threshold per-request so SecOps can toggle (and tests can vary it)
 // without a process restart.
 const mode = () => (process.env.FIREWALL_MODE || "shadow").toLowerCase(); // shadow | enforce
@@ -271,6 +275,47 @@ router.post("/", async (req, res) => {
     };
     const stored = await insertAlert(alert);
     publish("threat", alert);
+
+    // Prompt injection → Behavioral Risk Analysis updates DIRECTLY (PRD §35):
+    // run the Layer-2 pipeline on the hostile-session context and publish the
+    // decision to the SSE stream so the dashboard's EXPLAINABILITY block shows
+    // every triggered warning (new device/location, off-hours, sensitive
+    // resource, frequency above baseline, prior failed auths, anomaly score).
+    // Fire-and-forget: never adds latency to the chat path.
+    fetch(`${ENGINE_URL}/behavior/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        session_id: sessionId,
+        role: "user",
+        device_id: "unknown-x7",
+        device_type: "mobile",
+        device_trust: 0.1,
+        registered_device: false,
+        device_change: true,
+        location_change: true,
+        location_frequency: 0.05,
+        hour: 3,
+        working_hours: false,
+        working_day: false,
+        resource_type: "database",
+        resource_sensitivity: "critical",
+        request_frequency: 150,
+        resource_access_frequency: 60,
+        failed_auth_count: 2,
+        prompt_text: prompt,
+        prompt_injection: true,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+      .then(async (r) => {
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data?.decision) publish("behavior", { ...data.decision, ts: new Date() });
+      })
+      .catch(() => { /* behavioral feed must never break the chat path */ });
+
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
     if (forensics?.clientIp) await recordOffense(forensics.clientIp);
     // Epic D: learn the signature so a repeat of this attack shape is caught pre-ML.

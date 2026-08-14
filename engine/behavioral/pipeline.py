@@ -61,6 +61,13 @@ def analyze(telemetry: Telemetry) -> dict:
         from .threat_engine import _score_to_level
         threat["risk_level"] = _score_to_level(threat["risk_score"])
 
+    # Layer-1 bridge: a confirmed prompt injection is itself a hostile
+    # behavioral signal — boost the risk and let §35 explain it.
+    if telemetry.prompt_injection:
+        threat["risk_score"] = min(100, threat["risk_score"] + 30)
+        from .threat_engine import _score_to_level
+        threat["risk_level"] = _score_to_level(threat["risk_score"])
+
     # Generate explainability reasons (PRD §35)
     reasons = _generate_reasons(telemetry, anomaly, baseline, llm_ctx)
 
@@ -89,6 +96,8 @@ def analyze(telemetry: Telemetry) -> dict:
 def _generate_reasons(telemetry: Telemetry, anomaly: dict, baseline, llm_ctx: dict) -> list[str]:
     """Explainability — why is this behavior flagged? (PRD §35)"""
     reasons = []
+    if telemetry.prompt_injection:
+        reasons.append("Prompt injection detected in user input (Layer-1 firewall)")
     if telemetry.device_change:
         reasons.append("New device detected")
     if telemetry.location_change:
