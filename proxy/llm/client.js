@@ -136,8 +136,20 @@ export async function chatCompletionMessages(messages, opts = {}) {
       ...(ip ? { agent: new https.Agent({ servername: url.hostname }) } : {}),
     });
   } catch (err) {
-    // Network-level failure (DNS, connection refused, timeout). Degrade
-    // gracefully so the dashboard shows a helpful message instead of a bare 502.
+    // Network-level failure (DNS, connection refused, timeout). Honor the
+    // documented STRICT_REAL=false contract: degrade to the offline demo
+    // responder instead of a bare 502 (trials must survive provider outages).
+    // Provider-level errors (4xx/429/5xx) still throw — those mean GLM answered.
+    if (!strictReal()) {
+      const last = [...messages].reverse().find((m) => m.role === "user");
+      return {
+        content:
+          "[LLM unreachable — offline demo responder] " +
+          (last?.content || "").slice(0, 160),
+        raw: null,
+        simulated: true,
+      };
+    }
     throw new Error(`LLM_UNREACHABLE: ${err.message || err}. Check your network or the provider status.`);
   }
   if (!res.ok) {

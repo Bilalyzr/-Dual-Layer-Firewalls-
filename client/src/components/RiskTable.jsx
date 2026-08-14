@@ -4,7 +4,7 @@
  * Columns: User | Device | Location | Anomaly | Risk | Action
  * Click a row to expand the user's behavioral profile (§37).
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
 
 const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
@@ -41,8 +41,8 @@ export default function RiskTable() {
           </thead>
           <tbody>
             {rows.map((b) => (
-              <>
-                <tr key={b.user_id} onClick={() => setSelectedUser(selectedUser === b.user_id ? null : b.user_id)} style={{ cursor: "pointer" }}>
+              <Fragment key={b.user_id}>
+                <tr onClick={() => setSelectedUser(selectedUser === b.user_id ? null : b.user_id)} style={{ cursor: "pointer" }}>
                   <td className="mono">{b.user_id}</td>
                   <td>{b.device_trusted ? "✓ Trusted" : "⚠ New"}</td>
                   <td>{b.location_change ? "⚠ Changed" : "Normal"}</td>
@@ -52,7 +52,7 @@ export default function RiskTable() {
                 </tr>
                 {/* §37 — User Behavioral Profile (expandable) */}
                 {selectedUser === b.user_id && (
-                  <tr key={b.user_id + "-detail"} className="profile-detail-row">
+                  <tr className="profile-detail-row">
                     <td colSpan={6}>
                       <div className="profile-detail">
                         <div className="muted small" style={{ marginBottom: 6 }}>BEHAVIORAL PROFILE — {b.user_id}</div>
@@ -80,7 +80,7 @@ export default function RiskTable() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
