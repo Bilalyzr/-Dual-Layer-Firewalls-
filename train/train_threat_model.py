@@ -309,8 +309,11 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         "max_depth": 6, "eta": 0.2, "subsample": 0.9,
         "colsample_bytree": 0.9, "seed": SEED,
     }
-    if n_threat and n_benign and n_threat != n_benign:
-        params["scale_pos_weight"] = max(n_threat, n_benign) / max(1, min(n_threat, n_benign))
+    # Class imbalance guard: standard XGBoost weighting = negatives/positives,
+    # so the MAJORITY class is downweighted (threat-heavy corpora like AdvBench
+    # otherwise cause false positives on instruction-style benign prompts).
+    if n_threat and n_benign:
+        params["scale_pos_weight"] = n_benign / n_threat
 
     import xgboost as xgb
     from sklearn.metrics import confusion_matrix

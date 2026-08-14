@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from api.dependencies import firewall_pipeline
 from core.config import SETTINGS
@@ -81,6 +82,23 @@ def realtime_sample(req: RealtimeSampleRequest):
                                      source=req.source or "external")
     return {"status": "recorded" if stored else "duplicate_ignored",
             "label": req.label}
+
+
+class RealtimeBatchRequest(BaseModel):
+    samples: list[dict] = Field(default_factory=list)  # [{prompt|text, label, source}]
+
+
+@router.post("/realtime/samples")
+def realtime_samples_batch(req: RealtimeBatchRequest):
+    """Bulk import (dataset feeds): one transaction, deduped server-side."""
+    from services import audit_log
+
+    rows = [{"text": s.get("prompt") or s.get("text") or "",
+             "label": int(s.get("label", 1)),
+             "source": s.get("source") or "dataset",
+             "scores": {}} for s in (req.samples or [])]
+    result = audit_log.record_training_samples_batch(rows)
+    return {"status": "ok", **result, "submitted": len(rows)}
 
 
 @router.get("/realtime/stats")

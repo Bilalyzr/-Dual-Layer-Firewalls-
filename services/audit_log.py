@@ -479,6 +479,67 @@ def record_training_sample(*, text: str, label: int, source: str = "realtime",
     return True
 
 
+def record_training_samples_batch(samples: list[dict]) -> dict[str, int]:
+    """Bulk insert of labeled samples in ONE transaction (fast imports).
+
+    samples: [{text, label, source?, scores?}] -> {recorded, duplicates}
+    """
+    import hashlib
+
+    out = {"recorded": 0, "duplicates": 0}
+    rows: list[tuple] = []
+    local_seen: set[str] = set()
+    for s in samples:
+        t = (s.get("text") or "").strip()
+        label = int(s.get("label", 1))
+        if len(t) < 8 or label not in (0, 1):
+            out["duplicates"] += 1
+            continue
+        h = hashlib.sha256(t.lower().encode()).hexdigest()
+        if h in local_seen:
+            out["duplicates"] += 1
+            continue
+        local_seen.add(h)
+        rows.append((time.time(), h, t[:4000], label,
+                     s.get("source") or "realtime",
+                     json.dumps(s.get("scores") or {})))
+    if not rows:
+        return out
+    try:
+        if _BACKEND == "unset":
+            init()
+        if _BACKEND == "postgres" and _PG is not None:
+            from psycopg.extras import execute_values  # type: ignore
+
+            execute_values(
+                _PG,
+                "INSERT INTO training_samples (ts, text_hash, text, label, source, scores)"
+                " VALUES %s ON CONFLICT (text_hash) DO NOTHING",
+                rows, page_size=500)
+            out["recorded"] = len(rows)
+            return out
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            cur = _SQLITE.executemany(
+                "INSERT OR IGNORE INTO training_samples (ts, text_hash, text, label, source, scores)"
+                " VALUES (?,?,?,?,?,?)", rows)
+            _SQLITE.commit()  # single fsync for the whole batch
+            out["recorded"] = int(cur.rowcount or 0)
+            out["duplicates"] += len(rows) - out["recorded"]
+            return out
+    except Exception:
+        pass
+    # memory fallback
+    for r in rows:
+        if r[1] in _MEM_TRAIN:
+            out["duplicates"] += 1
+        else:
+            _MEM_TRAIN[r[1]] = {"ts": r[0], "text_hash": r[1], "text": r[2],
+                                "label": r[3], "source": r[4],
+                                "scores": json.loads(r[5]), "trained": 0}
+            out["recorded"] += 1
+    return out
+
+
 def list_training_samples(label: int | None = None, limit: int = 5000) -> list[dict[str, Any]]:
     """Labeled samples, newest first (all when label is None)."""
     sql = ("SELECT id, ts, text, label, source, scores, trained"
