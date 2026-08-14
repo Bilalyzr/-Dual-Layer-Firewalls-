@@ -63,14 +63,119 @@ def admin_events(limit: int = 50):
             "events": audit_log.recent_events(limit)}
 
 
+# --------------------------------------------------------------------------- #
+# Session persistence (trial-update: every session saved to the database)
+# --------------------------------------------------------------------------- #
+@router.get("/admin/sessions")
+def admin_sessions(limit: int = 50, user_id: str | None = None):
+    sessions = audit_log.list_sessions(limit)
+    if user_id:
+        sessions = [s for s in sessions if s.get("user_id") == user_id]
+    return {"backend": audit_log.backend_name(), "count": len(sessions),
+            "sessions": sessions}
+
+
+# --------------------------------------------------------------------------- #
+# Vulnerability -> retrain loop (trial-update: new input vulnerabilities
+# update and train the model)
+# --------------------------------------------------------------------------- #
+class VulnerabilityReport(ChatCompletionRequest):
+    layer: str = "manual"
+    risk: float = 0.0
+
+
+@router.get("/admin/vulnerabilities")
+def admin_vulnerabilities(status: str = "pending", limit: int = 100):
+    vulns = audit_log.list_vulnerabilities(status=status, limit=limit)
+    return {"backend": audit_log.backend_name(), "count": len(vulns),
+            "vulnerabilities": vulns}
+
+
+@router.post("/admin/vulnerabilities")
+def report_vulnerability(req: VulnerabilityReport):
+    text = req.effective_prompt()
+    if not text:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="prompt required")
+    audit_log.record_vulnerability(prompt_text=text, layer=req.layer or "manual",
+                                   risk=req.risk, source="manual")
+    return {"status": "recorded", "pending": len(
+        audit_log.list_vulnerabilities(status="pending", limit=1000))}
+
+
+@router.post("/admin/retrain")
+def admin_retrain(min_samples: int = 1):
+    """Fold pending input vulnerabilities into the threat model (fast path:
+    only the new samples are embedded — base corpus embeddings are cached)."""
+    from fastapi import HTTPException
+
+    vulns = audit_log.list_vulnerabilities(status="pending", limit=1000)
+    rows = [(v.get("prompt_text", ""), 0) for v in vulns if v.get("prompt_text")]
+    if len(rows) < min_samples:
+        raise HTTPException(status_code=409,
+                            detail=f"only {len(rows)} pending samples "
+                                   f"(min_samples={min_samples})")
+    try:
+        from train.train_threat_model import retrain_with
+
+        result = retrain_with(rows)
+    except SystemExit as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    ids = [int(v["id"]) for v in vulns if v.get("id") is not None]
+    audit_log.mark_vulnerabilities_trained(ids)
+    # Best-effort: mirror the new attack vectors into the vector store for
+    # similarity-based recall of known-bad prompts.
+    try:
+        from qdrant_client import models  # type: ignore
+
+        from services import qdrant_client
+        from services.embedding_service import EMBED_DIM, embed_batch
+
+        client = qdrant_client.get_client()
+        if client is not None:
+            if not client.collection_exists("blocked_prompts"):
+                client.create_collection(
+                    collection_name="blocked_prompts",
+                    vectors_config=models.VectorParams(
+                        size=EMBED_DIM, distance=models.Distance.COSINE),
+                )
+            vectors = embed_batch([t for t, _ in rows])
+            client.upsert(
+                collection_name="blocked_prompts",
+                points=[models.PointStruct(
+                    id=i, vector=v.tolist(),
+                    payload={"text": t, "kind": "vulnerability"})
+                    for i, (v, (t, _)) in enumerate(zip(vectors, rows))],
+            )
+    except Exception:
+        pass
+    return {"status": "retrained", "trained_samples": len(rows), **result}
+
+
 @router.get("/session/risk/{user_id}")
 def session_risk(user_id: str):
     return behavioral.peek(user_id).model_dump()
 
 
 @router.delete("/session/risk/{user_id}")
-def reset_session(user_id: str):
+def reset_session(user_id: str, session_key: str | None = None):
     behavioral.reset(user_id)
+    try:
+        # Align the durable record with the termination (block alignment).
+        sessions = audit_log.list_sessions(limit=200)
+        for s in sessions:
+            if s.get("session_key") in {session_key, f"user:{user_id}"} or \
+                    (s.get("user_id") == user_id and s.get("status") == "active"):
+                audit_log.upsert_session(
+                    session_key=s["session_key"], user_id=user_id,
+                    turns=int(s.get("turns") or 0),
+                    risk=float(s.get("last_risk") or 0.0),
+                    sentiment_avg=float(s.get("sentiment_avg") or 0.0),
+                    status="terminated",
+                )
+    except Exception:
+        pass
     return {"status": "reset", "user_id": user_id}
 
 

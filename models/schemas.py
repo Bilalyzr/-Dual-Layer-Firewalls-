@@ -51,6 +51,7 @@ class GuardrailStatus(BaseModel):
     risk_score: float = 0.0
     layers: dict[str, Any] = Field(default_factory=dict)
     latency_ms: float = 0.0
+    request_id: str = ""
 
 
 class ChatCompletionResponse(BaseModel):
@@ -60,12 +61,18 @@ class ChatCompletionResponse(BaseModel):
 
 
 class BlockedResponse(BaseModel):
+    """Every block path (403/429) returns this one aligned shape: error +
+    reason + risk + the full layer breakdown, request_id, latency and the
+    session state at block time (trial-update: block alignment)."""
     error: str = "Request blocked by firewall"
     reason: str = "cumulative risk exceeded"
     risk_score: float = 0.0
     # Layer breakdown (incl. word-injection sentiment) so the site can display
     # WHY the block happened — trial-update #1 display requirement.
     layers: dict[str, Any] = Field(default_factory=dict)
+    request_id: str = ""
+    latency_ms: float = 0.0
+    session: dict[str, Any] = Field(default_factory=dict)  # status/turns/risk summary
 
 
 # --------------------------------------------------------------------------- #

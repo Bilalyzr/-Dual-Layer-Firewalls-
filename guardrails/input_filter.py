@@ -55,6 +55,15 @@ def ready() -> bool:
     return _STATUS["ready"]
 
 
+def reload() -> bool:
+    """Drop cached artifacts so the next classify() picks up a retrained
+    threat_model.json (used by the vulnerability-retrain loop)."""
+    global _MODEL, _STATS
+    _MODEL = None
+    _STATS = {}
+    return ready()
+
+
 def classify(sanitized_prompt: str) -> IntentResult:
     """Embed + XGBoost -> P(threat) in [0,1] plus the vector for L3/L4."""
     vec = embed(sanitized_prompt)

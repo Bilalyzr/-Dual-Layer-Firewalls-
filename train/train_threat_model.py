@@ -127,21 +127,17 @@ def train_xgboost(X: np.ndarray, y: np.ndarray) -> tuple[object, dict]:
     return booster, metrics
 
 
-def main() -> dict:
-    if not DATASET.exists():
-        raise SystemExit(f"dataset missing: {DATASET}")
+def _train_and_save(model, rows: list[tuple[str, int]], stage1_enabled: bool) -> dict:
+    """Full training path; also caches base embeddings for fast retraining."""
+    import hashlib
+    import joblib
 
-    model = _load()
-    if not model:
-        raise SystemExit("embedding model unavailable — check network / model cache")
-
-    rows = load_dataset()
     texts = [t for t, _ in rows]
     labels = np.array([1 if l == THREAT_LABEL else 0 for _, l in rows], dtype=int)
     print(f"[train] {len(rows)} rows ({int(labels.sum())} threat / {int((1-labels).sum())} benign)")
 
     stage1: dict = {"skipped": "disabled (set CONTRASTIVE_FINE_TUNE=true)"}
-    if CONTRASTIVE:
+    if stage1_enabled:
         print("[train] stage 1: contrastive triplet fine-tuning …")
         stage1 = contrastive_finetune(model, rows)
         print(f"[train] stage 1 result: {stage1}")
@@ -158,15 +154,19 @@ def main() -> dict:
     SETTINGS.threat_model_path.parent.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(SETTINGS.threat_model_path))
 
-    import joblib
-
+    base_hash = hashlib.sha256(
+        ("\x00".join(texts) + "|" + ",".join(map(str, labels.tolist()))).encode()
+    ).hexdigest()
     stats = {
         "benign_centroid": X[labels == 0].mean(axis=0),
         "attack_centroid": X[labels == 1].mean(axis=0),
+        "base_hash": base_hash,
+        "base_X": X,
+        "base_y": labels,
     }
     joblib.dump(stats, SETTINGS.embed_stats_path)
 
-    result = {
+    return {
         "rows": len(rows),
         "embedding_dim": int(X.shape[1]),
         "stage1_contrastive": stage1,
@@ -176,8 +176,96 @@ def main() -> dict:
             "embed_stats": str(SETTINGS.embed_stats_path),
         },
     }
+
+
+def main() -> dict:
+    if not DATASET.exists():
+        raise SystemExit(f"dataset missing: {DATASET}")
+
+    model = _load()
+    if not model:
+        raise SystemExit("embedding model unavailable — check network / model cache")
+
+    rows = load_dataset()
+    result = _train_and_save(model, rows, stage1_enabled=CONTRASTIVE)
     print(f"[train] done -> {SETTINGS.threat_model_path.name}")
     return result
+
+
+def retrain_with(extra_rows: list[tuple[str, int]]) -> dict:
+    """Vulnerability-retrain loop (trial-update): fold newly observed attack
+    inputs into the model WITHOUT re-embedding the whole corpus.
+
+    The base corpus embeddings are cached in embed_stats.joblib (keyed by a
+    content hash) at first train; retraining embeds only the new rows,
+    concatenates, retrains the XGBoost head and overwrites the artifacts.
+    """
+    import hashlib
+    import joblib
+
+    model = _load()
+    if not model:
+        raise SystemExit("embedding model unavailable — check network / model cache")
+    if not extra_rows:
+        return {"added": 0, "skipped": "no extra rows"}
+
+    base_rows = load_dataset()
+    texts = [t for t, _ in base_rows]
+    labels = [1 if l == THREAT_LABEL else 0 for _, l in base_rows]
+    base_hash = hashlib.sha256(
+        ("\x00".join(texts) + "|" + ",".join(map(str, labels))).encode()
+    ).hexdigest()
+
+    stats = {}
+    if SETTINGS.embed_stats_path.exists():
+        try:
+            stats = joblib.load(SETTINGS.embed_stats_path) or {}
+        except Exception:
+            stats = {}
+
+    if stats.get("base_hash") == base_hash and stats.get("base_X") is not None:
+        X = np.asarray(stats["base_X"], dtype=np.float32)
+        y = np.asarray(stats["base_y"], dtype=int)
+        print(f"[retrain] base cache hit ({len(y)} rows)")
+    else:
+        print("[retrain] base cache miss — embedding full corpus")
+        X = embed_all(texts, model)
+        y = np.asarray(labels, dtype=int)
+
+    extra_texts = [t for t, _ in extra_rows]
+    extra_y = np.asarray([1 if l == THREAT_LABEL else 0 for _, l in extra_rows], dtype=int)
+    X_extra = embed_all(extra_texts, model)
+    X = np.vstack([X, X_extra])
+    y = np.concatenate([y, extra_y])
+    print(f"[retrain] corpus {len(y)} rows (+{len(extra_rows)} vulnerabilities)")
+
+    booster, metrics = train_xgboost(X, y)
+    print(f"[retrain] holdout: {metrics}")
+
+    SETTINGS.threat_model_path.parent.mkdir(parents=True, exist_ok=True)
+    booster.save_model(str(SETTINGS.threat_model_path))
+    stats = {
+        "benign_centroid": X[y == 0].mean(axis=0),
+        "attack_centroid": X[y == 1].mean(axis=0),
+        "base_hash": base_hash,
+        "base_X": X,
+        "base_y": y,
+    }
+    joblib.dump(stats, SETTINGS.embed_stats_path)
+
+    from guardrails import input_filter
+
+    input_filter.reload()
+    return {
+        "added": len(extra_rows),
+        "dataset_rows": int(len(y)),
+        "stage2_xgboost": metrics,
+        "model_reloaded": input_filter.status().get("ready", False),
+        "artifacts": {
+            "threat_model": str(SETTINGS.threat_model_path),
+            "embed_stats": str(SETTINGS.embed_stats_path),
+        },
+    }
 
 
 if __name__ == "__main__":

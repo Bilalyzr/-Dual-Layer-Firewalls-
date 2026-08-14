@@ -50,11 +50,16 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     layers: dict[str, Any] = {}
 
     # ---- Ingress: bans + rate limit ------------------------------------- #
+    session_key = req.session_id or f"user:{user_id}"
     try:
         if audit_log.is_banned(user_id):
             return _finish(request_id, user_id, req, PipelineOutcome(
                 blocked=True, status_code=403,
-                body=BlockedResponse(reason="user banned").model_dump(),
+                body=BlockedResponse(
+                    reason="user banned",
+                    request_id=request_id,
+                    latency_ms=0.0,
+                ).model_dump(),
             ), layers, client_ip, t_start, decision_label="block", block_layer="ban")
     except Exception:
         pass
@@ -124,13 +129,41 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     # ---- L5: Pipeline Decision -------------------------------------------- #
     dec = decision_mod.evaluate(sanitized, intent, session, rag,
                                 injection_weightage=sentiment["weightage"])
+
+    # ---- Persist the session record (trial-update: sessions in the DB) ---- #
+    try:
+        audit_log.upsert_session(
+            session_key=session_key, user_id=user_id, turns=session.turn_count,
+            risk=dec.risk_score, sentiment_avg=session.sentiment_avg,
+            status="blocked" if dec.blocked else "active",
+        )
+    except Exception:
+        pass
+
     if dec.blocked:
         behavioral.reset(user_id)          # PDF §3.3: terminate + reset session
         metrics.inc_layer_block(dec.layer)
+        # Vulnerability capture: the blocked input becomes retraining material
+        try:
+            audit_log.record_vulnerability(
+                prompt_text=sanitized.sanitized_prompt,
+                layer=dec.layer, risk=dec.risk_score, source="auto",
+            )
+        except Exception:
+            pass
         outcome = PipelineOutcome(
             blocked=True, status_code=403,
-            body=BlockedResponse(reason=dec.reason, risk_score=dec.risk_score,
-                                 layers=layers).model_dump(),
+            body=BlockedResponse(
+                reason=dec.reason, risk_score=dec.risk_score, layers=layers,
+                request_id=request_id,
+                latency_ms=round(1000 * (time.perf_counter() - t_start), 2),
+                session={
+                    "status": "blocked",
+                    "turns": session.turn_count,
+                    "cumulative_risk": session.cumulative_risk,
+                    "sentiment_avg": session.sentiment_avg,
+                },
+            ).model_dump(),
         )
         return _finish(request_id, user_id, req, outcome, layers, client_ip,
                        t_start, decision_label="block", block_layer=dec.layer,
@@ -162,8 +195,20 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
             risk_score=dec.risk_score,
             layers=layers,
             latency_ms=round(1000 * (time.perf_counter() - t_start), 2),
+            request_id=request_id,
         ),
     ).model_dump()
+
+    # Adversarial sampling (PDF §3.1): allowed-but-risky prompts are queued
+    # for review so borderline evasions become tomorrow's training data.
+    if 0.5 <= dec.risk_score < SETTINGS.intent_block_threshold:
+        try:
+            audit_log.record_vulnerability(
+                prompt_text=sanitized.sanitized_prompt, layer="sampling",
+                risk=dec.risk_score, source="sampling",
+            )
+        except Exception:
+            pass
 
     outcome = PipelineOutcome(blocked=False, status_code=200, body=body)
     return _finish(request_id, user_id, req, outcome, layers, client_ip,
