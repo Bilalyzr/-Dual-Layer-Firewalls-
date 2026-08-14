@@ -31,3 +31,6 @@ engine/biometric/*.npz
 
 # runtime audit store (Architecture v2) — local state, never commit
 data/
+
+# realtime-learning runtime artifacts
+models/threat_model.prev.json

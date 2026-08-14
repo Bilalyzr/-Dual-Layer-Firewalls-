@@ -64,6 +64,49 @@ def admin_events(limit: int = 50):
 
 
 # --------------------------------------------------------------------------- #
+# Real-time learning (trial-update: train on LIVE traffic, not a predefined set)
+# --------------------------------------------------------------------------- #
+class RealtimeSampleRequest(ChatCompletionRequest):
+    label: int = 1          # 1 = threat, 0 = benign
+    source: str = "external"
+
+
+@router.post("/realtime/sample")
+def realtime_sample(req: RealtimeSampleRequest):
+    """Push a labeled REAL sample (used by the legacy proxy and manual runs)."""
+    from services import realtime_learner
+
+    text = req.effective_prompt()
+    stored = realtime_learner.record(text=text, label=req.label,
+                                     source=req.source or "external")
+    return {"status": "recorded" if stored else "duplicate_ignored",
+            "label": req.label}
+
+
+@router.get("/realtime/stats")
+def realtime_stats():
+    from services import realtime_learner
+
+    ready, reason = realtime_learner.ready_to_retrain()
+    return {**realtime_learner.stats(), "ready_to_retrain": ready, "reason": reason}
+
+
+@router.post("/admin/retrain-realtime")
+def admin_retrain_realtime(force: bool = True):
+    """Force a retrain on captured REAL traffic (no predefined set)."""
+    from services import realtime_learner
+
+    return realtime_learner.retrain_now(force=force)
+
+
+@router.post("/admin/rollback-model")
+def admin_rollback_model():
+    from services import realtime_learner
+
+    return realtime_learner.rollback_model()
+
+
+# --------------------------------------------------------------------------- #
 # Session persistence (trial-update: every session saved to the database)
 # --------------------------------------------------------------------------- #
 @router.get("/admin/sessions")

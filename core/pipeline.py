@@ -167,7 +167,8 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
         )
         return _finish(request_id, user_id, req, outcome, layers, client_ip,
                        t_start, decision_label="block", block_layer=dec.layer,
-                       risk=dec.risk_score)
+                       risk=dec.risk_score,
+                       training_text=sanitized.sanitized_prompt)
 
     # ---- L6: Upstream LLM Execution (LiteLLM router) ---------------------- #
     t0 = time.perf_counter()
@@ -213,18 +214,34 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     outcome = PipelineOutcome(blocked=False, status_code=200, body=body)
     return _finish(request_id, user_id, req, outcome, layers, client_ip,
                    t_start, decision_label="filtered" if not out.safe else "allow",
-                   risk=dec.risk_score)
+                   risk=dec.risk_score,
+                   training_text=sanitized.sanitized_prompt)
 
 
 # --------------------------------------------------------------------------- #
 def _finish(request_id: str, user_id: str, req: ChatCompletionRequest,
             outcome: PipelineOutcome, layers: dict, client_ip: str,
             t_start: float, *, decision_label: str, risk: float = 0.0,
-            block_layer: str = "") -> PipelineOutcome:
+            block_layer: str = "", training_text: str = "") -> PipelineOutcome:
     outcome.request_id = request_id
     outcome.latency_ms = round(1000 * (time.perf_counter() - t_start), 2)
     metrics.inc_requests(decision_label)
     metrics.observe_risk(risk)
+    # Real-time learning capture (trial-update): the FINAL verdict labels the
+    # real prompt — blocked => threat, allowed => benign — so the model keeps
+    # training on live traffic, never a predefined set.
+    if training_text:
+        try:
+            from services import realtime_learner
+
+            realtime_learner.record(
+                text=training_text,
+                label=1 if decision_label == "block" else 0,
+                source="realtime",
+                scores={"risk": round(risk, 4)},
+            )
+        except Exception:
+            pass
     try:
         audit_log.record(
             request_id=request_id, user_id=user_id, session_id=req.session_id,

@@ -32,6 +32,19 @@ const router = Router();
 // as firewall/mlClient.js).
 const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
 
+// Real-time learning bridge: push every REAL verdict (blocked -> threat,
+// allowed -> benign) to the v2 firewall's training store so the model keeps
+// learning from live site traffic. Fire-and-forget; off when unreachable.
+const REALTIME_API = process.env.REALTIME_API_URL || "http://localhost:8020";
+function reportRealtimeSample(prompt, label) {
+  fetch(`${REALTIME_API}/realtime/sample`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: String(prompt || "").slice(0, 4000), label, source: "proxy-traffic" }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {});
+}
+
 // Prompt injection → Behavioral Risk Analysis updates DIRECTLY (PRD §35):
 // run the Layer-2 pipeline on the hostile-session context and publish the
 // decision to the SSE stream so the dashboard's EXPLAINABILITY block shows
@@ -167,6 +180,7 @@ router.post("/", async (req, res) => {
     await recordSignature(fp.signature, { category, label, techniques: fp.techniques });
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
     reportInjectionBehavior({ userId, sessionId, prompt });
+    reportRealtimeSample(prompt, 1);
     return res.json({
       blocked: true,
       reason: "blocked by AI firewall",
@@ -294,6 +308,9 @@ router.post("/", async (req, res) => {
     category,
   };
 
+  // Real-time learning: allowed traffic is the benign class.
+  reportRealtimeSample(prompt, 0);
+
   // ---- Decision: shadow logs but does not block. ----
   const willBlock = isThreat && MODE === "enforce";
 
@@ -323,6 +340,7 @@ router.post("/", async (req, res) => {
     publish("threat", alert);
 
     reportInjectionBehavior({ userId, sessionId, prompt });
+    reportRealtimeSample(prompt, 1);
 
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
     if (forensics?.clientIp) await recordOffense(forensics.clientIp);

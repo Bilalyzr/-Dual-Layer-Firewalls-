@@ -268,5 +268,114 @@ def retrain_with(extra_rows: list[tuple[str, int]]) -> dict:
     }
 
 
+def retrain_from_realtime(samples: list[tuple[str, int]],
+                          bootstrap_seed: bool = False) -> dict:
+    """REAL-TIME path: train the threat head on live captured traffic ONLY.
+
+    - `samples`: [(text, label)] from the real-time training store
+      (1 = threat/blocked, 0 = benign/allowed — auto-labeled by the firewall).
+    - `bootstrap_seed`: optionally fold in the predefined dataset. Default
+      False per the trial requirement ("no predefined set").
+    - Backs up the current artifact to threat_model.prev.json before
+      overwriting (one-click rollback), hot-reloads the live model, and
+      records a model version.
+    """
+    import shutil
+
+    from services import audit_log
+
+    model = _load()
+    if not model:
+        raise SystemExit("embedding model unavailable — check network / model cache")
+
+    texts = [t for t, _ in samples]
+    y = np.asarray([1 if l == 1 else 0 for _, l in samples], dtype=int)
+    n_threat, n_benign = int(y.sum()), int((1 - y).sum())
+
+    if bootstrap_seed:
+        base_rows = load_dataset()
+        texts = texts + [t for t, _ in base_rows]
+        y = np.concatenate([y, np.asarray(
+            [1 if l == THREAT_LABEL else 0 for _, l in base_rows], dtype=int)])
+        print(f"[retrain-realtime] + seed bootstrap ({len(base_rows)} rows)")
+
+    print(f"[retrain-realtime] {len(texts)} rows "
+          f"({n_threat} threat / {n_benign} benign, real traffic)")
+    X = embed_all(texts, model)
+
+    # Class imbalance guard for small real corpora.
+    params = {
+        "objective": "binary:logistic", "eval_metric": "logloss",
+        "max_depth": 6, "eta": 0.2, "subsample": 0.9,
+        "colsample_bytree": 0.9, "seed": SEED,
+    }
+    if n_threat and n_benign and n_threat != n_benign:
+        params["scale_pos_weight"] = max(n_threat, n_benign) / max(1, min(n_threat, n_benign))
+
+    import xgboost as xgb
+    from sklearn.metrics import confusion_matrix
+    from sklearn.model_selection import train_test_split
+
+    metrics: dict = {"note": "corpus too small for holdout"}
+    if len(texts) >= 40 and 0 < n_threat and 0 < n_benign:
+        Xtr, Xte, ytr, yte = train_test_split(
+            X, y, test_size=0.25, random_state=SEED, stratify=y)
+        booster = xgb.train(params, xgb.DMatrix(Xtr, label=ytr),
+                            num_boost_round=300, verbose_eval=False)
+        pred = (booster.predict(xgb.DMatrix(Xte)) >= 0.5).astype(int)
+        tn, fp, fn, tp = confusion_matrix(yte, pred, labels=[0, 1]).ravel()
+        metrics = {
+            "holdout_support": int(len(yte)),
+            "accuracy": round(float((tp + tn) / max(1, tp + tn + fp + fn)), 4),
+            "false_positive_rate": round(float(fp / max(1, fp + tn)), 4),
+            "false_negative_rate": round(float(fn / max(1, fn + tp)), 4),
+        }
+    else:
+        booster = xgb.train(params, xgb.DMatrix(X, label=y),
+                            num_boost_round=200, verbose_eval=False)
+
+    # Backup the live artifact, then hot-swap.
+    SETTINGS.threat_model_path.parent.mkdir(parents=True, exist_ok=True)
+    if SETTINGS.threat_model_path.exists():
+        shutil.copy2(SETTINGS.threat_model_path,
+                     SETTINGS.threat_model_path.with_suffix(".prev.json"))
+    booster.save_model(str(SETTINGS.threat_model_path))
+
+    # Refresh centroids (drift / attack-proximity) while PRESERVING the seed
+    # base-embedding cache used by the vulnerability retrain path.
+    import joblib
+
+    stats: dict = {}
+    if SETTINGS.embed_stats_path.exists():
+        try:
+            stats = joblib.load(SETTINGS.embed_stats_path) or {}
+        except Exception:
+            stats = {}
+    stats["benign_centroid"] = X[y == 0].mean(axis=0)
+    stats["attack_centroid"] = X[y == 1].mean(axis=0)
+    stats["realtime"] = {"samples": int(len(texts)), "threat": n_threat,
+                         "benign": n_benign}
+    joblib.dump(stats, SETTINGS.embed_stats_path)
+
+    from guardrails import input_filter
+
+    input_filter.reload()
+    version = audit_log.record_model_version(
+        source="realtime" if not bootstrap_seed else "realtime+seed",
+        samples=int(len(texts)), threat=n_threat, benign=n_benign, metrics=metrics,
+    )
+    print(f"[retrain-realtime] v{version} saved -> {SETTINGS.threat_model_path.name}")
+    return {
+        "status": "retrained",
+        "version": version,
+        "samples": int(len(texts)),
+        "threat": n_threat,
+        "benign": n_benign,
+        "bootstrap_seed": bootstrap_seed,
+        "metrics": metrics,
+        "model_reloaded": input_filter.status().get("ready", False),
+    }
+
+
 if __name__ == "__main__":
     print(main())

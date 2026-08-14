@@ -63,6 +63,23 @@ def _init_pg():
                 source TEXT NOT NULL DEFAULT 'auto',
                 status TEXT NOT NULL DEFAULT 'pending'
             );
+            CREATE TABLE IF NOT EXISTS training_samples (
+                id BIGSERIAL PRIMARY KEY,
+                ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+                text_hash TEXT NOT NULL UNIQUE,
+                text TEXT NOT NULL,
+                label INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'realtime',
+                scores JSONB,
+                trained INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS model_versions (
+                version INTEGER PRIMARY KEY,
+                trained_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                source TEXT NOT NULL,
+                samples INTEGER, threat INTEGER, benign INTEGER,
+                metrics JSONB
+            );
             """
         )
         _BACKEND = "postgres"
@@ -111,6 +128,27 @@ def _init_sqlite():
             )
             """
         )
+        _SQLITE.execute(
+            """
+            CREATE TABLE IF NOT EXISTS training_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL, text_hash TEXT NOT NULL UNIQUE,
+                text TEXT NOT NULL, label INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'realtime',
+                scores TEXT, trained INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        _SQLITE.execute(
+            """
+            CREATE TABLE IF NOT EXISTS model_versions (
+                version INTEGER PRIMARY KEY,
+                trained_at REAL, source TEXT NOT NULL,
+                samples INTEGER, threat INTEGER, benign INTEGER,
+                metrics TEXT
+            )
+            """
+        )
         _SQLITE.commit()
         _BACKEND = "sqlite"
     except Exception:
@@ -121,6 +159,8 @@ def _init_sqlite():
 # memory-fallback stores for sessions + vulnerabilities
 _MEM_SESSIONS: dict[str, dict] = {}
 _MEM_VULNS: list[dict] = []
+_MEM_TRAIN: dict[str, dict] = {}   # text_hash -> sample
+_MEM_VERSIONS: list[dict] = []     # model version history
 
 
 def init() -> None:
@@ -394,3 +434,158 @@ def mark_vulnerabilities_trained(ids: list[int]) -> int:
         if v.get("id") in ids:
             v["status"] = "trained"
     return len(ids)
+
+
+# --------------------------------------------------------------------------- #
+# Real-time training samples (trial-update: model learns from live traffic)
+# --------------------------------------------------------------------------- #
+def record_training_sample(*, text: str, label: int, source: str = "realtime",
+                           scores: dict | None = None) -> bool:
+    """Store one labeled real-traffic prompt. Deduped by content hash.
+
+    label: 1 = threat (blocked), 0 = benign (allowed). Never breaks callers.
+    """
+    import hashlib
+
+    t = (text or "").strip()
+    if len(t) < 8 or label not in (0, 1):
+        return False
+    h = hashlib.sha256(t.lower().encode()).hexdigest()
+    try:
+        if _BACKEND == "unset":
+            init()
+        if _BACKEND == "postgres" and _PG is not None:
+            cur = _PG.execute(
+                "INSERT INTO training_samples (text_hash, text, label, source, scores)"
+                " VALUES (%s,%s,%s,%s,%s) ON CONFLICT (text_hash) DO NOTHING",
+                (h, t[:4000], label, source, json.dumps(scores or {})),
+            )
+            return bool(cur.rowcount)
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            cur = _SQLITE.execute(
+                "INSERT OR IGNORE INTO training_samples (ts, text_hash, text, label, source, scores)"
+                " VALUES (?,?,?,?,?,?)",
+                (time.time(), h, t[:4000], label, source, json.dumps(scores or {})),
+            )
+            _SQLITE.commit()
+            return bool(cur.rowcount)
+    except Exception:
+        pass
+    if h in _MEM_TRAIN:
+        return False
+    _MEM_TRAIN[h] = {"ts": time.time(), "text_hash": h, "text": t[:4000],
+                     "label": label, "source": source, "scores": scores or {},
+                     "trained": 0}
+    return True
+
+
+def list_training_samples(label: int | None = None, limit: int = 5000) -> list[dict[str, Any]]:
+    """Labeled samples, newest first (all when label is None)."""
+    sql = ("SELECT id, ts, text, label, source, scores, trained"
+           " FROM training_samples")
+    args: tuple = ()
+    if label is not None:
+        sql += " WHERE label = ?"
+        args = (label,)
+    sql += " ORDER BY ts DESC LIMIT ?"
+    args = args + (limit,)
+    try:
+        if _BACKEND == "postgres" and _PG is not None:
+            cur = _PG.execute(sql.replace("?", "%s"), args)
+            cols = [c.name for c in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            cur = _SQLITE.execute(sql, args)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception:
+        pass
+    rows = list(_MEM_TRAIN.values())
+    if label is not None:
+        rows = [r for r in rows if r["label"] == label]
+    return sorted(rows, key=lambda r: r.get("ts", 0), reverse=True)[:limit]
+
+
+def training_sample_counts() -> dict[str, int]:
+    rows = list_training_samples(limit=100000)
+    return {
+        "total": len(rows),
+        "threat": sum(1 for r in rows if r["label"] == 1),
+        "benign": sum(1 for r in rows if r["label"] == 0),
+        "untrained": sum(1 for r in rows if not r.get("trained")),
+    }
+
+
+def mark_training_samples_trained(ids: list[int]) -> int:
+    if not ids:
+        return 0
+    try:
+        if _BACKEND == "postgres" and _PG is not None:
+            _PG.execute("UPDATE training_samples SET trained = 1"
+                        " WHERE id = ANY(%s)", (list(ids),))
+            return len(ids)
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            _SQLITE.executemany(
+                "UPDATE training_samples SET trained = 1 WHERE id = ?",
+                [(i,) for i in ids])
+            _SQLITE.commit()
+            return len(ids)
+    except Exception:
+        pass
+    for r in _MEM_TRAIN.values():
+        if r.get("id") in ids:
+            r["trained"] = 1
+    return len(ids)
+
+
+def record_model_version(*, source: str, samples: int, threat: int,
+                         benign: int, metrics: dict) -> int:
+    version = latest_model_version().get("version", 0) + 1
+    row = {"version": version, "trained_at": time.time(), "source": source,
+           "samples": samples, "threat": threat, "benign": benign,
+           "metrics": metrics}
+    try:
+        if _BACKEND == "postgres" and _PG is not None:
+            _PG.execute(
+                "INSERT INTO model_versions (version, source, samples, threat, benign, metrics)"
+                " VALUES (%s,%s,%s,%s,%s,%s)"
+                " ON CONFLICT (version) DO NOTHING",
+                (version, source, samples, threat, benign, json.dumps(metrics)),
+            )
+        elif _BACKEND == "sqlite" and _SQLITE is not None:
+            _SQLITE.execute(
+                "INSERT OR IGNORE INTO model_versions (version, trained_at, source,"
+                " samples, threat, benign, metrics) VALUES (?,?,?,?,?,?,?)",
+                (version, row["trained_at"], source, samples, threat,
+                 benign, json.dumps(metrics)),
+            )
+            _SQLITE.commit()
+        else:
+            _MEM_VERSIONS.append(row)
+    except Exception:
+        _MEM_VERSIONS.append(row)
+    return version
+
+
+def latest_model_version() -> dict[str, Any]:
+    try:
+        if _BACKEND == "postgres" and _PG is not None:
+            cur = _PG.execute(
+                "SELECT version, trained_at, source, samples, threat, benign, metrics"
+                " FROM model_versions ORDER BY version DESC LIMIT 1")
+            cols = [c.name for c in cur.description]
+            r = cur.fetchone()
+            return dict(zip(cols, r)) if r else {}
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            cur = _SQLITE.execute(
+                "SELECT version, trained_at, source, samples, threat, benign, metrics"
+                " FROM model_versions ORDER BY version DESC LIMIT 1")
+            r = cur.fetchone()
+            if r:
+                return {"version": r[0], "trained_at": r[1], "source": r[2],
+                        "samples": r[3], "threat": r[4], "benign": r[5],
+                        "metrics": json.loads(r[6] or "{}")}
+            return {}
+    except Exception:
+        pass
+    return dict(_MEM_VERSIONS[-1]) if _MEM_VERSIONS else {}

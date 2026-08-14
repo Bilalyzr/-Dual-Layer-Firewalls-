@@ -49,7 +49,21 @@ async def lifespan(app: FastAPI):
         print(f"[firewall] intent head: {input_filter.status()}")
     except Exception as exc:
         print(f"[firewall] intent head warm skipped: {exc}")
+    try:
+        from services import realtime_learner
+
+        if realtime_learner.start_auto_trainer():
+            print(f"[firewall] realtime auto-trainer ON "
+                  f"(every {SETTINGS.realtime_interval_s}s, min {SETTINGS.realtime_min_new} new)")
+    except Exception as exc:
+        print(f"[firewall] realtime trainer skipped: {exc}")
     yield
+    try:
+        from services import realtime_learner
+
+        realtime_learner.stop_auto_trainer()
+    except Exception:
+        pass
     print("[firewall] shutdown")
 
 

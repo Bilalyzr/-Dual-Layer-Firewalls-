@@ -125,5 +125,19 @@ class Settings:
     # ---- Rate limiting (PDF core/rate_limiter.py) ----------------------- #
     rate_limit_per_min: int = field(default_factory=lambda: _envi("RATE_LIMIT_PER_MIN", 120))
 
+    # ---- Real-time learning loop (model trains on LIVE traffic) --------- #
+    # Off by default? No — the trial requirement is real-time data, so the
+    # auto-trainer runs unless explicitly disabled.
+    realtime_auto_train: bool = field(default_factory=lambda: _envb("REALTIME_AUTO_TRAIN", True))
+    realtime_interval_s: int = field(default_factory=lambda: _envi("REALTIME_INTERVAL_S", 300))
+    realtime_min_new: int = field(default_factory=lambda: _envi("REALTIME_MIN_NEW", 20))
+    # Minimum samples PER CLASS before a real-data-only retrain is allowed.
+    realtime_min_class: int = field(default_factory=lambda: _envi("REALTIME_MIN_CLASS", 8))
+    # Bootstrap with the predefined seed dataset? Default FALSE — real data only
+    # (the explicit trial requirement).
+    realtime_bootstrap_seed: bool = field(
+        default_factory=lambda: _envb("REALTIME_BOOTSTRAP_SEED", False)
+    )
+
 
 SETTINGS = Settings()
