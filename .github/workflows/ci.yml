@@ -17,7 +17,11 @@ jobs:
           cache: npm
           cache-dependency-path: proxy/package-lock.json
       - name: Install proxy deps
-        run: npm ci
+        # --legacy-peer-deps: the lock was authored under legacy peer semantics;
+        # rebuff->langchain@0.0.159 declares a mongodb@^5 peer that modern npm
+        # tries to auto-install (absent from the lock => EUSAGE). mongodb@6 is
+        # the real direct dep; the stale peer is never used at runtime.
+        run: npm ci --legacy-peer-deps
         working-directory: proxy
       - name: Run proxy tests (vitest)
         run: npm test
@@ -55,7 +59,7 @@ jobs:
           cache: npm
           cache-dependency-path: proxy/package-lock.json
       - name: Install proxy deps
-        run: npm ci
+        run: npm ci --legacy-peer-deps  # see proxy job note on the langchain peer
         working-directory: proxy
       - name: Validate distributed compose file
         run: docker compose -f docker-compose.micro.yml config -q
@@ -89,7 +93,7 @@ jobs:
         with:
           node-version: "20"
       - name: Install proxy deps (reader-svc shares the Reader agent source)
-        run: npm ci
+        run: npm ci --legacy-peer-deps  # see proxy job note on the langchain peer
         working-directory: proxy
       - name: Install reader-svc deps
         run: npm install
