@@ -16,7 +16,6 @@ import StatusBar from "./components/StatusBar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import ThreatFeed from "./components/ThreatFeed.jsx";
 import MetricsPanel from "./components/MetricsPanel.jsx";
-import AgentAuditTrail from "./components/AgentAuditTrail.jsx";
 import SlaPanel from "./components/SlaPanel.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import BehavioralRiskDashboard from "./components/BehavioralRiskDashboard.jsx";
@@ -105,7 +104,6 @@ export default function App() {
           <RiskTable />
           <ThreatFeed />
           <SlaPanel />
-          <AgentAuditTrail />
         </div>
       </main>
 
