@@ -125,63 +125,118 @@ BENIGN_LEXICON: dict[str, float] = {
 # Saturation point: a net attack weight at/above this -> weightage 1.0.
 INJECTION_SATURATION = 2.5
 
+# ---- precompiled matchers (built once at import; the scorer is pure-CPU) --- #
+import re as _re  # noqa: E402  (module-level precompile below)
+
 _PHRASES_FIRST: list[str] = sorted(
     [k for k in list(INJECTION_LEXICON) + list(BENIGN_LEXICON) if " " in k],
     key=len, reverse=True,
 )
+_PHRASE_RES = [(t, _re.compile(_re.escape(t))) for t in _PHRASES_FIRST]
+_WORD_RE = _re.compile(r"[a-z]{3,}")
+_SENT_SPLIT = _re.compile(r"[.!?;\n]+")
+_ALL_LEX = {**INJECTION_LEXICON, **BENIGN_LEXICON}
+
+# Safety caps so pathological inputs can never stall the scorer.
+_MAX_TEXT_CHARS = 16_000
+_MAX_SENTENCES = 40
 
 
-def word_sentiment(text: str) -> dict:
-    """Trial-update #1: word-level injection/relation scoring.
+def _match_terms(low: str) -> tuple[list[dict], list[dict]]:
+    """Match lexicon phrases (longest first) then single words, no double count.
 
-    Returns per-term matches with polarity + weight, the prompt weightage
-    (0..1, negative-dominant) and the aggregate average term score (signed).
+    Claimed character positions live in a bytearray mask — overlap checks and
+    marking run at C speed, so even a 16KB prompt full of hits stays O(n).
     """
-    import re as _re
-
-    low = deobfuscate(text)
-    consumed: list[tuple[int, int]] = []  # (start, end) spans already matched
-
-    def _overlaps(s: int, e: int) -> bool:
-        return any(not (e <= cs or s >= ce) for cs, ce in consumed)
-
+    claimed = bytearray(len(low))
     negative: list[dict] = []
     positive: list[dict] = []
 
-    # 1) multi-word phrases first (longest wins, avoids double counting)
-    for term in _PHRASES_FIRST:
-        for m in _re.finditer(_re.escape(term), low):
-            if not _overlaps(m.start(), m.end()):
-                consumed.append((m.start(), m.end()))
-                weight = INJECTION_LEXICON.get(term) or BENIGN_LEXICON.get(term, 0.0)
-                (negative if term in INJECTION_LEXICON else positive).append(
-                    {"term": term, "weight": weight})
-    # 2) single words
-    for m in _re.finditer(r"[a-z]{3,}", low):
-        if _overlaps(m.start(), m.end()):
-            continue
-        w = m.group(0)
-        if w in INJECTION_LEXICON:
-            consumed.append((m.start(), m.end()))
-            negative.append({"term": w, "weight": INJECTION_LEXICON[w]})
-        elif w in BENIGN_LEXICON:
-            consumed.append((m.start(), m.end()))
-            positive.append({"term": w, "weight": BENIGN_LEXICON[w]})
+    def _claim(start: int, end: int) -> bool:
+        if any(claimed[start:end]):
+            return False
+        claimed[start:end] = b"\x01" * (end - start)
+        return True
 
+    for term, rx in _PHRASE_RES:
+        for m in rx.finditer(low):
+            if _claim(m.start(), m.end()):
+                if term in INJECTION_LEXICON:
+                    negative.append({"term": term, "weight": INJECTION_LEXICON[term]})
+                else:
+                    positive.append({"term": term, "weight": BENIGN_LEXICON[term]})
+    for m in _WORD_RE.finditer(low):
+        w = m.group(0)
+        weight = _ALL_LEX.get(w)
+        if weight is not None and _claim(m.start(), m.end()):
+            bucket = negative if w in INJECTION_LEXICON else positive
+            bucket.append({"term": w, "weight": weight})
+    return negative, positive
+
+
+def _score_terms(negative: list[dict], positive: list[dict]) -> dict:
     neg_total = sum(t["weight"] for t in negative)
     pos_total = sum(t["weight"] for t in positive)
     net = neg_total - pos_total
     matched = len(negative) + len(positive)
     return {
-        "negative_terms": negative,
-        "positive_terms": positive,
         "negative_total": round(neg_total, 4),
         "positive_total": round(pos_total, 4),
-        # prompt weightage: 0 (benign-dominant) .. 1 (saturated attack)
         "weightage": round(min(1.0, max(0.0, net) / INJECTION_SATURATION), 4),
-        # aggregate average score per matched term (signed: + attack, - benign)
         "average_score": round(net / matched, 4) if matched else 0.0,
         "matched_terms": matched,
+    }
+
+
+def word_sentiment(text: str) -> dict:
+    """Word + sentence weightage for ANY prompt (trial-update #1, speed-first).
+
+    Pure lexicon — no model, no network, no embedding: sub-millisecond on
+    typical prompts. Returns per-term matches, per-sentence breakdown,
+    whole-prompt weightage and the aggregate average term score.
+    """
+    if not text or not text.strip():
+        return {**_score_terms([], []),
+                "negative_terms": [], "positive_terms": [],
+                "sentence_count": 0, "sentence_weightage": 0.0, "sentences": []}
+    if len(text) > _MAX_TEXT_CHARS:
+        text = text[:_MAX_TEXT_CHARS]
+
+    low = deobfuscate(text)
+    negative, positive = _match_terms(low)
+    overall = _score_terms(negative, positive)
+
+    # ---- sentence-level weightage (worst sentence drives the risk) -------- #
+    sentences: list[dict] = []
+    for chunk in _SENT_SPLIT.split(text)[:_MAX_SENTENCES]:
+        if not chunk.strip():
+            continue
+        c_low = deobfuscate(chunk)
+        n, p = _match_terms(c_low)
+        s = _score_terms(n, p)
+        if s["matched_terms"]:
+            sentences.append({
+                "text": chunk.strip()[:120],
+                "negative_total": s["negative_total"],
+                "positive_total": s["positive_total"],
+                "weightage": s["weightage"],
+                "average_score": s["average_score"],
+                "matched_terms": s["matched_terms"],
+            })
+    sentence_weightage = max((s["weightage"] for s in sentences), default=0.0)
+
+    # The worst sentence sets the floor for the prompt: benign words damp
+    # attack words IN RELATION (same sentence), but must never erase an
+    # attack sentence from a different part of the prompt.
+    overall["weightage"] = max(overall["weightage"], sentence_weightage)
+
+    return {
+        "negative_terms": negative,
+        "positive_terms": positive,
+        **overall,
+        "sentence_count": len(sentences),
+        "sentence_weightage": sentence_weightage,
+        "sentences": sentences,
     }
 
 

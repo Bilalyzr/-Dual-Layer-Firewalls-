@@ -85,7 +85,15 @@ class SentimentScoreRequest(ChatCompletionRequest):
 
 @router.post("/sentiment/score")
 def sentiment_score(req: SentimentScoreRequest):
+    """Word + sentence weightage for any prompt. Pure lexicon — no model,
+    no embedding, no network: sub-millisecond server-side; `latency_ms`
+    is included so the UI can prove it."""
+    import time as _time
+
     from services.policy_engine import word_sentiment
 
+    t0 = _time.perf_counter()
     text = req.effective_prompt() or ""
-    return word_sentiment(text)
+    result = word_sentiment(text)
+    result["latency_ms"] = round(1000 * (_time.perf_counter() - t0), 3)
+    return result
