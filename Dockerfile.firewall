@@ -1,0 +1,27 @@
+# GenAI Security Firewall Proxy — 7-layer pipeline (Architecture v2)
+# Trains the threat model at build time so the container boots fully armed.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+COPY requirements-security.txt ./
+RUN pip install --no-cache-dir -r requirements-security.txt
+
+# Service code (api/ core/ guardrails/ services/ models/ train/) + dataset
+COPY api ./api
+COPY core ./core
+COPY guardrails ./guardrails
+COPY services ./services
+COPY models ./models
+COPY train ./train
+COPY engine/classifier/jailbreak_dataset.csv ./engine/classifier/jailbreak_dataset.csv
+
+# Train the XGBoost head on the frozen MiniLM embeddings at build time
+# (uses network to fetch all-MiniLM-L6-v2 once, then it's cached in the image).
+RUN python -m train.train_threat_model || echo "WARN: build-time training failed; run it inside the container"
+
+EXPOSE 8020
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8020"]

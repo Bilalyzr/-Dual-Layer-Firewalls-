@@ -1,0 +1,23 @@
+# Architecture v2 — GenAI Security Firewall Proxy (7-layer pipeline)
+# Install: pip install -r requirements-security.txt
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.10
+httpx>=0.28
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.6
+joblib>=1.4
+# L2 semantic intent guardrail (PDF §2.3)
+sentence-transformers>=3.0
+xgboost>=2.1
+# L3 state store / rate limiting
+redis>=5.0
+# L4 RAG store (embedded :memory: mode when QDRANT_URL is unset)
+qdrant-client>=1.9
+# L6 upstream router (100+ providers)
+litellm>=1.50
+# Observability (Prometheus /metrics)
+prometheus-client>=0.20
+# Optional: PostgreSQL audit backend (AUDIT_DSN) — SQLite fallback otherwise
+# psycopg[binary]>=3.1

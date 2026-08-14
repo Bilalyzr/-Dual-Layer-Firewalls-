@@ -1,0 +1,39 @@
+# Diagram: "ALERTS — Alert Manager (High Risk / Attack)"
+groups:
+  - name: genai-firewall
+    rules:
+      - alert: FirewallBlockSpike
+        expr: sum(rate(firewall_requests_total{decision="block"}[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High rate of blocked requests (possible attack in progress)"
+          description: "More than 0.5 blocks/sec sustained over 5 minutes."
+
+      - alert: HighAverageRisk
+        expr: avg(rate(firewall_risk_score_sum[5m]) / rate(firewall_risk_score_count[5m])) > 0.6
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Average request risk above 0.6"
+          description: "Traffic is trending risky — review /admin/events."
+
+      - alert: BehavioralLayerBlocks
+        expr: sum(rate(firewall_layer_blocks_total{layer="behavioral"}[10m])) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Multi-turn attacks detected (behavioral layer)"
+          description: "Cumulative-risk terminations are firing — likely slow-steering jailbreaks."
+
+      - alert: RAGInjectionAttempts
+        expr: sum(rate(firewall_layer_blocks_total{layer="rag"}[10m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Indirect prompt injection via RAG detected"
+          description: "Poisoned documents are being dropped before reaching the LLM."

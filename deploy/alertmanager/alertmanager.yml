@@ -1,0 +1,13 @@
+# Minimal AlertManager — logs alerts; wire a real receiver (Slack/PagerDuty/
+# SMTP) via ALERT_WEBHOOK when deploying for real.
+route:
+  receiver: default
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+
+receivers:
+  - name: default
+    # Replace with a live integration, e.g.:
+    # webhook_configs:
+    #   - url: http://host.docker.internal:9099/alert

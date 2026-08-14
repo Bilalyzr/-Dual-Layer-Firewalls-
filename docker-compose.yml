@@ -132,8 +132,114 @@ services:
       - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./tls:/etc/tls:ro
 
+  # ===========================================================================
+  # ARCHITECTURE v2 — GenAI Security Firewall Proxy (7-layer pipeline)
+  #   firewall     FastAPI POST /v1/chat/completions (L1..L7 pipeline)
+  #   redis        session_risk:{user_id} state store, TTL 30 min
+  #   qdrant       vector DB / RAG store (+ blocked-prompt memory)
+  #   postgres     audit log store (events, decisions, user bans)
+  #   prometheus   metrics scraper (/metrics on the firewall)
+  #   grafana      real-time dashboards
+  #   alertmanager high-risk / attack alerts
+  # Enable with:  docker compose --profile security up -d
+  # ===========================================================================
+  firewall:
+    build:
+      context: .
+      dockerfile: Dockerfile.firewall
+    profiles: ["security"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      AUDIT_DSN: postgresql://firewall:firewall@postgres:5432/firewall
+      DEFAULT_LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      FIREWALL_API_KEY: ${FIREWALL_API_KEY:-}
+      LLM_OFFLINE_ECHO: "true"
+    ports:
+      - "8020:8020"
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["security"]
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["security"]
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["security"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: firewall
+      POSTGRES_PASSWORD: firewall
+      POSTGRES_DB: firewall
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firewall"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["security"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["security"]
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3300:3000"
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    profiles: ["security"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+
 volumes:
   mongo-data:
+  redis-data:
+  qdrant-data:
+  pg-data:
 
 networks:
   # reader-svc joins BOTH `default` (so the proxy can reach it) and the isolated
