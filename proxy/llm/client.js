@@ -42,6 +42,49 @@ async function resolveHost(hostname) {
   return null; // null = let fetch use its normal resolver
 }
 
+/**
+ * DNS-bypass fallback for network-level fetch failures: connect by the
+ * Google-DNS-resolved IPv4 using classic node:https, which honors
+ * `servername` for TLS SNI (undici fetch cannot do by-IP + SNI). Returns a
+ * fetch-Response-shaped {ok, status, text(), json()} or null when unusable.
+ */
+function fetchViaIpBypass(url, headers, body, timeoutMs) {
+  return (async () => {
+    const ip = await resolveHost(url.hostname);
+    if (!ip) return null;
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+      try {
+        const req = https.request({
+          host: ip,
+          port: url.port || 443,
+          path: url.pathname + url.search,
+          method: "POST",
+          servername: url.hostname, // correct SNI so the cert validates
+          headers: { ...headers, Host: url.hostname },
+          timeout: timeoutMs,
+        }, (r) => {
+          let buf = "";
+          r.setEncoding("utf8");
+          r.on("data", (c) => (buf += c));
+          r.on("end", () => done({
+            ok: r.statusCode >= 200 && r.statusCode < 300,
+            status: r.statusCode,
+            text: async () => buf,
+            json: async () => JSON.parse(buf),
+          }));
+        });
+        req.on("timeout", () => req.destroy(new Error("bypass timeout")));
+        req.on("error", () => done(null));
+        req.end(body);
+      } catch {
+        done(null);
+      }
+    });
+  })();
+}
+
 // Read env lazily (at call time) rather than caching at module load, so the
 // config is correct regardless of import ordering vs. dotenv, and so tests can
 // vary it per-case without a fresh import.
@@ -108,49 +151,53 @@ export async function chatCompletionMessages(messages, opts = {}) {
   }
   const key = apiKey();
   const url = new URL(`${baseUrl()}/chat/completions`);
-  // Pre-resolve the hostname via Google DNS to bypass broken local DNS
-  // (common Windows issue where fetch() can't resolve .cn domains).
-  const ip = await resolveHost(url.hostname);
-  const fetchUrl = ip
-    ? `${url.protocol}//${ip}:${url.port || 443}${url.pathname}`
-    : url.toString();
-  const extraHeaders = ip ? { Host: url.hostname } : {};
+  const payload = JSON.stringify({
+    model: model(),
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+  });
+  const baseHeaders = {
+    "Content-Type": "application/json",
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
+  };
 
+  // Attempt 1 — PLAIN fetch by hostname. undici resolves and sets TLS SNI
+  // from the hostname itself. (The old pre-resolve-then-fetch-by-IP approach
+  // is broken: undici's fetch IGNORES the node-https `agent` option, so the
+  // IP became the SNI -> ERR_TLS_CERT_ALTNAME_INVALID -> "fetch failed".)
   let res;
   try {
-    res = await fetch(fetchUrl, {
+    res = await fetch(url.toString(), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...extraHeaders,
-        ...(key ? { Authorization: `Bearer ${key}` } : {}),
-      },
-      body: JSON.stringify({
-        model: model(),
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-      }),
+      headers: baseHeaders,
+      body: payload,
       signal: AbortSignal.timeout(timeoutMs),
-      // When connecting by IP, we need TLS to use the original hostname for SNI.
-      ...(ip ? { agent: new https.Agent({ servername: url.hostname }) } : {}),
     });
   } catch (err) {
-    // Network-level failure (DNS, connection refused, timeout). Honor the
-    // documented STRICT_REAL=false contract: degrade to the offline demo
-    // responder instead of a bare 502 (trials must survive provider outages).
-    // Provider-level errors (4xx/429/5xx) still throw — those mean GLM answered.
-    if (!strictReal()) {
-      const last = [...messages].reverse().find((m) => m.role === "user");
-      return {
-        content:
-          "[LLM unreachable — offline demo responder] " +
-          (last?.content || "").slice(0, 160),
-        raw: null,
-        simulated: true,
-      };
+    // Attempt 2 — DNS bypass via classic node:https (which DOES honor
+    // `servername` for SNI). Only for network-level failures; used when the
+    // local resolver can't resolve the host but Google DNS can.
+    const bypass = await fetchViaIpBypass(url, baseHeaders, payload, timeoutMs);
+    if (bypass) {
+      res = bypass;
+    } else {
+      // Network-level failure on both paths. Honor the documented
+      // STRICT_REAL=false contract: degrade to the offline demo responder
+      // instead of a bare 502 (trials must survive provider outages).
+      // Provider-level errors (4xx/429/5xx) still throw — those mean GLM answered.
+      if (!strictReal()) {
+        const last = [...messages].reverse().find((m) => m.role === "user");
+        return {
+          content:
+            "[LLM unreachable — offline demo responder] " +
+            (last?.content || "").slice(0, 160),
+          raw: null,
+          simulated: true,
+        };
+      }
+      throw new Error(`LLM_UNREACHABLE: ${err.message || err}. Check your network or the provider status.`);
     }
-    throw new Error(`LLM_UNREACHABLE: ${err.message || err}. Check your network or the provider status.`);
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
