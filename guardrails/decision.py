@@ -24,7 +24,8 @@ class Decision:
 
 def evaluate(sanitized: SanitizeResult, intent: IntentResult,
              session: SessionRiskResult, rag: RagValidationResult,
-             injection_weightage: float = 0.0) -> Decision:
+             injection_weightage: float = 0.0,
+             memory_similarity: float = 0.0) -> Decision:
     # Composite risk: the strongest signal any layer produced this turn
     # (trial-update #3: word-injection weightage is part of the composite).
     risk = max(
@@ -57,6 +58,10 @@ def evaluate(sanitized: SanitizeResult, intent: IntentResult,
     # attack outright — no benign reason to encode "ignore all rules".
     if any(r.startswith("base64-payload") for r in sanitized.removed):
         return Decision(True, "cumulative risk exceeded", round(risk, 4), "sanitizer")
+    # SEMANTIC MEMORY: a near-duplicate (cosine >= threshold) of an attack we
+    # already blocked. Repeat attacks are recognized on sight.
+    if memory_similarity >= SETTINGS.memory_block_threshold:
+        return Decision(True, "cumulative risk exceeded", round(risk, 4), "memory")
 
     # L3 — multi-turn cumulative risk (the diagram's block reason verbatim).
     if session.blocked:

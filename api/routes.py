@@ -242,7 +242,11 @@ def admin_retrain(min_samples: int = 1):
 
 @router.get("/session/risk/{user_id}")
 def session_risk(user_id: str):
-    return behavioral.peek(user_id).model_dump()
+    """Live session state + long-term strikes + per-turn risk timeline."""
+    result = behavioral.peek(user_id).model_dump()
+    result["strikes"] = behavioral.get_strikes(user_id)
+    result["timeline"] = behavioral.get_timeline(user_id, limit=20)
+    return result
 
 
 @router.delete("/session/risk/{user_id}")

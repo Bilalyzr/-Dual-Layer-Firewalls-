@@ -56,9 +56,12 @@ def _save_state(user_id: str, data: dict) -> None:
 
 
 def reset(user_id: str) -> None:
-    """Session termination hook (PDF §3.3: terminate + reset session state)."""
+    """Session termination hook (PDF §3.3: terminate + reset session state).
+    Strikes persist by design — long-term memory outlives the session."""
     try:
-        redis_client.get_state().delete(_key(user_id))
+        state = redis_client.get_state()
+        state.delete(_key(user_id))
+        state.delete(f"session_risk:{user_id}:timeline")
     except Exception:
         pass
 
@@ -116,6 +119,7 @@ def track(user_id: str, embedding: list[float] | None, intent_score: float,
 
     if has_embedding:
         history.append(list(embedding))
+
     _save_state(user_id, {
         "cumulative": cumulative,
         "count": int(prev.get("count", 0)) + 1,
@@ -124,6 +128,17 @@ def track(user_id: str, embedding: list[float] | None, intent_score: float,
     })
 
     blocked = cumulative >= SETTINGS.cumulative_risk_threshold
+
+    # Per-turn risk timeline (trial-update: Redis enhancement) — a rolling
+    # forensic record of how the session escalated.
+    _push_timeline(user_id, {
+        "turn": int(prev.get("count", 0)) + 1,
+        "cumulative": round(cumulative, 4),
+        "drift": round(drift, 4),
+        "injection_weightage": round(float(injection_weightage), 4),
+        "blocked": blocked,
+    })
+
     if blocked:
         # Terminating the session = wiping its risk state (PDF §3.3).
         reset(user_id)
@@ -137,6 +152,66 @@ def track(user_id: str, embedding: list[float] | None, intent_score: float,
         sentiment_avg=round(sentiment_avg, 4),
         blocked=blocked,
     )
+
+
+def _push_timeline(user_id: str, snapshot: dict) -> None:
+    try:
+        state = redis_client.get_state()
+        key = f"session_risk:{user_id}:timeline"
+        state.lpush(key, json.dumps(snapshot))
+        state.ltrim(key, 0, 49)
+        state.expire(key, SETTINGS.session_risk_ttl_s)
+    except Exception:
+        pass
+
+
+def get_timeline(user_id: str, limit: int = 50) -> list[dict]:
+    """Newest-first per-turn risk snapshots for forensics / charts."""
+    try:
+        state = redis_client.get_state()
+        raw = state.lrange(f"session_risk:{user_id}:timeline", 0, limit - 1)
+        out = []
+        for r in raw:
+            try:
+                out.append(json.loads(r if isinstance(r, str) else r.decode()))
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
+def register_strike(user_id: str) -> int:
+    """Long-term user risk memory: every block is a strike. Reaching
+    USER_STRIKE_LIMIT within the window bans the repeat offender."""
+    state = redis_client.get_state()
+    key = f"user_strikes:{user_id}"
+    try:
+        n = int(state.incr(key) or 1)
+    except Exception:
+        n = 1
+    try:
+        state.expire(key, SETTINGS.user_strike_window_s)
+    except Exception:
+        pass
+    if n >= SETTINGS.user_strike_limit:
+        from services import audit_log
+
+        audit_log.ban_user(user_id, f"{n} blocked attacks within "
+                                    f"{SETTINGS.user_strike_window_s // 3600}h")
+        try:
+            state.delete(key)
+        except Exception:
+            pass
+    return n
+
+
+def get_strikes(user_id: str) -> int:
+    try:
+        v = redis_client.get_state().get(f"user_strikes:{user_id}")
+        return int(v or 0)
+    except Exception:
+        return 0
 
 
 def peek(user_id: str) -> SessionRiskResult:

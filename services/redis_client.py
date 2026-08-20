@@ -57,6 +57,35 @@ class MemoryRedis:
             return True
         return False
 
+    def lpush(self, key: str, value: object) -> int:
+        self._sweep()
+        lst = self._store.get(key)
+        if not isinstance(lst, list):
+            lst = []
+            self._store[key] = lst
+        lst.insert(0, value)
+        return len(lst)
+
+    def ltrim(self, key: str, start: int, stop: int) -> bool:
+        lst = self._store.get(key)
+        if isinstance(lst, list):
+            n = len(lst)
+            if stop < 0:
+                stop = n + stop
+            self._store[key] = lst[max(0, start):stop + 1]
+            return True
+        return False
+
+    def lrange(self, key: str, start: int, stop: int) -> list:
+        self._sweep()
+        lst = self._store.get(key)
+        if not isinstance(lst, list):
+            return []
+        n = len(lst)
+        if stop < 0:
+            stop = n + stop
+        return lst[max(0, start):min(stop + 1, n)]
+
     def pipeline(self):
         return _MemoryPipeline(self)
 

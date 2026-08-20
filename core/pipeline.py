@@ -125,6 +125,19 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     )
     metrics.observe_latency("intent", time.perf_counter() - t0)
 
+    # ---- Semantic attack memory (Qdrant): recall known-blocked near-dupes -- #
+    memory_similarity, memory_payload = 0.0, {}
+    if intent.embedding_vector:
+        from services import qdrant_client as _qmem
+
+        memory_similarity, memory_payload = _qmem.recall_similar(
+            intent.embedding_vector)
+    layers["memory"] = _layer_meta(
+        similarity=round(memory_similarity, 4),
+        matched=memory_similarity >= SETTINGS.memory_block_threshold,
+        known_attack=(memory_payload.get("text") or "")[:80],
+    )
+
     # ---- L3: Behavioral Session Layer (stateful) -------------------------- #
     t0 = time.perf_counter()
     session = behavioral.track(
@@ -155,7 +168,8 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
 
     # ---- L5: Pipeline Decision -------------------------------------------- #
     dec = decision_mod.evaluate(sanitized, intent, session, rag,
-                                injection_weightage=sentiment["weightage"])
+                                injection_weightage=sentiment["weightage"],
+                                memory_similarity=memory_similarity)
 
     # ---- Persist the session record (trial-update: sessions in the DB) ---- #
     try:
@@ -170,6 +184,21 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     if dec.blocked:
         behavioral.reset(user_id)          # PDF §3.3: terminate + reset session
         metrics.inc_layer_block(dec.layer)
+        # Semantic memory: remember this attack (deduped) for future recall,
+        # and register a long-term user strike (repeat offenders get banned).
+        try:
+            from services import qdrant_client as _qmem
+
+            _qmem.remember_blocked(sanitized.sanitized_prompt,
+                                   intent.embedding_vector,
+                                   user_id=user_id, risk=dec.risk_score,
+                                   layer=dec.layer)
+        except Exception:
+            pass
+        try:
+            behavioral.register_strike(user_id)
+        except Exception:
+            pass
         # Vulnerability capture: the blocked input becomes retraining material
         try:
             audit_log.record_vulnerability(

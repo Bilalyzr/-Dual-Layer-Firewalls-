@@ -69,7 +69,23 @@ def get_client():
         if SETTINGS.qdrant_url:
             _CLIENT = QdrantClient(url=SETTINGS.qdrant_url, timeout=3)
         else:
-            _CLIENT = QdrantClient(":memory:")  # embedded local mode
+            # On-disk local mode FIRST: the attack memory survives restarts.
+            # PROBE before accepting: another process (the running firewall)
+            # may already hold the storage lock — fall back to :memory: then,
+            # never crash the caller. Failures are always non-fatal.
+            cand = None
+            try:
+                SETTINGS.qdrant_path.parent.mkdir(parents=True, exist_ok=True)
+                cand = QdrantClient(path=str(SETTINGS.qdrant_path))
+                cand.get_collections()  # raises when the path is locked/corrupt
+                _CLIENT = cand
+            except Exception:
+                try:
+                    if cand is not None:
+                        cand.close()
+                except Exception:
+                    pass
+                _CLIENT = QdrantClient(":memory:")
         _READY = True
     except Exception:
         _CLIENT = None
@@ -144,3 +160,93 @@ def search(embedding: list[float], top_k: int | None = None) -> list[dict]:
         ]
     except Exception:
         return []
+
+
+# --------------------------------------------------------------------------- #
+# Semantic attack memory (trial-update: Qdrant enhancement)
+# --------------------------------------------------------------------------- #
+BLOCKED_COLLECTION = "blocked_prompts"
+
+
+def ensure_blocked_collection() -> bool:
+    client = get_client()
+    if client is None:
+        return False
+    try:
+        from qdrant_client import models  # type: ignore
+
+        from services.embedding_service import EMBED_DIM
+
+        if not client.collection_exists(BLOCKED_COLLECTION):
+            client.create_collection(
+                collection_name=BLOCKED_COLLECTION,
+                vectors_config=models.VectorParams(
+                    size=EMBED_DIM, distance=models.Distance.COSINE),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def remember_blocked(text: str, embedding: list[float], *, user_id: str = "",
+                     risk: float = 0.0, layer: str = "") -> bool:
+    """Upsert a blocked attack into the semantic memory (deduped by content
+    hash as the point id — repeat attacks refresh metadata, not duplicates)."""
+    import hashlib
+    import time as _time
+
+    client = get_client()
+    if client is None or not text.strip() or not embedding:
+        return False
+    try:
+        from qdrant_client import models  # type: ignore
+
+        if not client.collection_exists(BLOCKED_COLLECTION):
+            ensure_blocked_collection()
+        pid = int(hashlib.sha1(text.lower().encode()).hexdigest()[:15], 16)
+        client.upsert(
+            collection_name=BLOCKED_COLLECTION,
+            points=[models.PointStruct(
+                id=pid,
+                vector=list(embedding),
+                payload={"text": text[:2000], "user_id": user_id,
+                         "risk": risk, "layer": layer, "ts": _time.time()},
+            )],
+        )
+        return True
+    except Exception:
+        return False
+
+
+def recall_similar(embedding: list[float]) -> tuple[float, dict]:
+    """(best cosine score, payload) against remembered-blocked attacks.
+
+    (0.0, {}) when the memory is empty/unavailable — callers fail-open.
+    """
+    client = get_client()
+    if client is None or not embedding:
+        return 0.0, {}
+    try:
+        if not client.collection_exists(BLOCKED_COLLECTION):
+            return 0.0, {}
+        hits = client.query_points(
+            collection_name=BLOCKED_COLLECTION, query=embedding,
+            limit=1, with_payload=True,
+        ).points
+        if not hits:
+            return 0.0, {}
+        return float(hits[0].score), dict(hits[0].payload or {})
+    except Exception:
+        return 0.0, {}
+
+
+def blocked_memory_count() -> int:
+    client = get_client()
+    if client is None:
+        return 0
+    try:
+        if not client.collection_exists(BLOCKED_COLLECTION):
+            return 0
+        return int(client.count(BLOCKED_COLLECTION, exact=True).count)
+    except Exception:
+        return 0

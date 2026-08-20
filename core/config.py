@@ -155,5 +155,23 @@ class Settings:
         default_factory=lambda: _envf("CASCADE_CLEAN_WEIGHTAGE", 0.20)
     )
 
+    # ---- Semantic attack memory (Qdrant) ----------------------------------- #
+    # Local on-disk storage for the embedded Qdrant (survives restarts).
+    qdrant_path: Path = field(
+        default_factory=lambda: Path(_env("QDRANT_PATH", str(ROOT / "data" / "qdrant")))
+    )
+    # Cosine similarity to a remembered-blocked prompt at/above this = the
+    # prompt is a near-duplicate of a known attack -> memory block.
+    memory_block_threshold: float = field(
+        default_factory=lambda: _envf("MEMORY_BLOCK_THRESHOLD", 0.92)
+    )
+
+    # ---- Long-term user risk memory (Redis) -------------------------------- #
+    # N blocks within the strike window -> the repeat offender is banned.
+    user_strike_limit: int = field(default_factory=lambda: _envi("USER_STRIKE_LIMIT", 3))
+    user_strike_window_s: int = field(
+        default_factory=lambda: _envi("USER_STRIKE_WINDOW_S", 24 * 3600)
+    )
+
 
 SETTINGS = Settings()
