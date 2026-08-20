@@ -19,7 +19,7 @@ A secure proxy that sits in front of an LLM application and defends it on two la
 
 ## Tier 2 — completion matrix
 
-All Tier-2 epics are delivered and covered by the test suite (`docs/TIER2_TODO.md`
+All Tier-2 epics are delivered and covered by the test suite (`docs/archive/TIER2_TODO.md`
 tracks the detail). Verified against source, not a summary line.
 
 | Epic | Capability | Status | Key files |
