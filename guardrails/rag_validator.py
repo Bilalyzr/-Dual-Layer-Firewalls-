@@ -19,6 +19,8 @@ from services.embedding_service import cosine
 def validate(embedding_vector: list[float], query_text: str = "") -> RagValidationResult:
     result = RagValidationResult()
 
+    if not embedding_vector:
+        return result  # cascade FAST tiers carry no embedding -> no retrieval
     if not qdrant_client.ready():
         return result
 

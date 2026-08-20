@@ -28,6 +28,11 @@ try:
         "firewall_risk_score", "Final risk score distribution",
         buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
     )
+    CASCADE_TIERS = Counter(
+        "firewall_cascade_tiers_total",
+        "Cascade screening tier decisions",
+        ["tier"],  # fast-allow | fast-block | deep
+    )
     _ENABLED = True
 except Exception:  # prometheus_client missing — metrics become no-ops
     CONTENT_TYPE_LATEST = "text/plain; charset=utf-8"
@@ -52,6 +57,11 @@ def observe_latency(layer: str, seconds: float) -> None:
 def observe_risk(score: float) -> None:
     if _ENABLED:
         RISK_SCORE.observe(score)
+
+
+def inc_cascade_tier(tier: str) -> None:
+    if _ENABLED:
+        CASCADE_TIERS.labels(tier=tier).inc()
 
 
 def render() -> tuple[bytes, str]:

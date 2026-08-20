@@ -39,6 +39,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# MTIME of the v2 threat model this process last loaded — drives hot-reload
+# when the v2 auto-trainer swaps the artifact (see /classify semantic fusion).
+_V2_MODEL_MTIME = 0.0
+
 # Ensures the trained artifact is loaded at boot (fail fast if missing).
 try:
     _CLF = get_classifier()
@@ -179,9 +183,20 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
     # gate (0.90), so the semantic score only contributes as a HIGH-CONFIDENCE
     # kill-shot (>= 0.85) — mid-range semantic scores stay out to avoid
     # importing the semantic model's borderline FPs into the site path.
-    # Fail-open when unavailable.
+    # Fail-open when unavailable. The artifact is MTIME-WATCHED: the v2
+    # auto-trainer hot-swaps models/threat_model.json in ITS process; without
+    # this check the engine would keep scoring with a stale copy forever.
     semantic_used = False
     try:
+        global _V2_MODEL_MTIME
+        from core.config import SETTINGS as _V2_SETTINGS
+
+        mtime = _V2_SETTINGS.threat_model_path.stat().st_mtime
+        if mtime != _V2_MODEL_MTIME:
+            from guardrails.input_filter import reload as _v2_reload
+
+            _v2_reload()
+            _V2_MODEL_MTIME = mtime
         from guardrails.input_filter import classify as _v2_classify
 
         v2 = _v2_classify(req.text)

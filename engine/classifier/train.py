@@ -72,6 +72,21 @@ def train() -> dict:
 
     joblib.dump(vectorizer, MODEL_DIR / "tfidf.joblib")
     joblib.dump(clf, MODEL_DIR / "clf.joblib")
+
+    # Also fit + persist the Tier-3 soft-voting ensemble (LR + SVC + RF) so
+    # engine /classify and the v2 cascade screening can use the stronger
+    # 3-model verdict (fallback to the single LogReg when absent).
+    try:
+        from .ensemble import build_estimators
+
+        ests = build_estimators()
+        for est in ests.values():
+            est.fit(X, y)
+        joblib.dump(ests, MODEL_DIR / "clf_ensemble.joblib")
+        metrics["ensemble"] = "trained"
+    except Exception as exc:  # ensemble is an optional upgrade, never fatal
+        metrics["ensemble"] = f"skipped: {type(exc).__name__}"
+
     return {"rows": int(len(df)), "features": int(X.shape[1]), **metrics}
 
 

@@ -19,6 +19,7 @@ from typing import Any
 
 from core.config import SETTINGS
 from guardrails import behavioral, decision as decision_mod, input_filter
+from guardrails import cascade as cascade_mod
 from guardrails import output_filter as output_filter_mod
 from guardrails import rag_validator, sanitizer
 from models.schemas import (BlockedResponse, ChatCompletionRequest,
@@ -88,9 +89,35 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     )
     metrics.observe_latency("sentiment", time.perf_counter() - t0)
 
-    # ---- L2: Semantic Intent Guardrail ----------------------------------- #
+    # ---- L2: Two-tier cascade (TF-IDF screening -> MiniLM depth) --------- #
     t0 = time.perf_counter()
-    intent = input_filter.classify(sanitized.sanitized_prompt)
+    sanitizer_clean = not sanitized.removed
+    screen = (cascade_mod.fast_classify(
+        sanitized.sanitized_prompt,
+        weightage=sentiment["weightage"],
+        sanitizer_clean=sanitizer_clean,
+    ) if SETTINGS.cascade_enabled
+    else {"tier": "deep", "tfidf_score": None, "reason": "cascade disabled",
+          "latency_ms": 0.0})
+    metrics.observe_latency("cascade", time.perf_counter() - t0)
+    if hasattr(metrics, "inc_cascade_tier"):
+        metrics.inc_cascade_tier(screen["tier"])
+
+    # FAST tiers skip the ~33ms MiniLM embed; DEEP runs it for the verdict.
+    t0 = time.perf_counter()
+    if screen["tier"] == "deep":
+        intent = input_filter.classify(sanitized.sanitized_prompt)
+    else:
+        from models.schemas import IntentResult
+
+        intent = IntentResult(
+            intent_score=max(screen["tfidf_score"] or 0.0,
+                             sentiment["weightage"] * 0.9),
+            embedding_vector=[],     # no embed on fast tiers
+            model_used=f"cascade-{screen['tier']}",
+            degraded=False,
+        )
+    layers["cascade"] = _layer_meta(**screen)
     layers["intent"] = _layer_meta(
         intent_score=round(intent.intent_score, 4),
         model=intent.model_used,

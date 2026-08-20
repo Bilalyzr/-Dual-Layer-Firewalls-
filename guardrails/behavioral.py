@@ -63,9 +63,13 @@ def reset(user_id: str) -> None:
         pass
 
 
-def track(user_id: str, embedding: list[float], intent_score: float,
+def track(user_id: str, embedding: list[float] | None, intent_score: float,
           injection_weightage: float = 0.0) -> SessionRiskResult:
     """Record this turn and evaluate cumulative risk.
+
+    `embedding` may be None/empty on cascade FAST tiers (no MiniLM embed):
+    drift/attack-proximity are simply not updated for that turn — turns and
+    cumulative risk still are.
 
     `injection_weightage` (trial-update #1/#3): the word-level attack weight
     of this turn's prompt — blended into the per-turn risk, so prompts dense
@@ -76,9 +80,11 @@ def track(user_id: str, embedding: list[float], intent_score: float,
     history: list[list[float]] = list(prev.get("history", []))[-SETTINGS.session_window:]
     sentiment_history: list[float] = list(prev.get("sentiment_history", []))[-SETTINGS.session_window:]
 
+    has_embedding = bool(embedding)
+
     # --- semantic drift from the session baseline ------------------------ #
     drift = 0.0
-    if history:
+    if has_embedding and history:
         baseline = np.mean(np.asarray(history, dtype=np.float32), axis=0)
         drift = max(0.0, 1.0 - cosine(embedding, baseline))
 
@@ -86,9 +92,10 @@ def track(user_id: str, embedding: list[float], intent_score: float,
     from guardrails.input_filter import centroids
 
     attack_proximity = 0.0
-    _, attack_c = centroids()
-    if attack_c is not None and len(embedding) == len(attack_c):
-        attack_proximity = max(0.0, cosine(embedding, attack_c))
+    if has_embedding:
+        _, attack_c = centroids()
+        if attack_c is not None and len(embedding) == len(attack_c):
+            attack_proximity = max(0.0, cosine(embedding, attack_c))
 
     # --- per-turn risk + EWMA cumulative ---------------------------------- #
     drift_risk = max(0.0, drift - SETTINGS.drift_free_tolerance) / max(
@@ -107,7 +114,8 @@ def track(user_id: str, embedding: list[float], intent_score: float,
     sentiment_history.append(round(float(injection_weightage), 4))
     sentiment_avg = float(np.mean(sentiment_history)) if sentiment_history else 0.0
 
-    history.append(list(embedding))
+    if has_embedding:
+        history.append(list(embedding))
     _save_state(user_id, {
         "cumulative": cumulative,
         "count": int(prev.get("count", 0)) + 1,
