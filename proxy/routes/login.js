@@ -104,7 +104,11 @@ router.post("/login", async (req, res) => {
   // 4. Decision: combine credential validity + behavioral risk
   publish("behavior", { ...behavioral, event_type: "login", user_id: username, ts: new Date() });
 
-  if (behavioral.risk_level === "HIGH") {
+  // Hard-deny only CRITICAL risk (>= 80): a genuinely hostile context
+  // (new device + new location + off hours + failed auths) still blocks.
+  // Plain off-hours admin logins (~70s) now step up with a warning instead
+  // of locking the operator out of their own console in the evening.
+  if (behavioral.risk_level === "HIGH" && (behavioral.risk_score ?? 100) >= 80) {
     appendAudit("login_blocked", { username, ip: clientIp, risk: behavioral.risk_score, reasons: behavioral.reasons, ts: new Date() });
     return res.status(403).json({
       success: false,
