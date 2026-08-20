@@ -165,7 +165,6 @@ def train():
     print("[behavioral] fitting scaler...")
     scaler = StandardScaler().fit(X_normal)
     X_normal_s = scaler.transform(X_normal)
-    X_anomalous_s = scaler.transform(X_anomalous)
 
     # Train One-Class SVM on normal data only
     print("[behavioral] training One-Class SVM...")
@@ -201,7 +200,7 @@ def train():
     joblib.dump(scaler, MODEL_DIR / "behavioral_scaler.joblib")
     import json
     (MODEL_DIR / "behavioral_metrics.json").write_text(json.dumps(metrics, indent=2))
-    print(f"[behavioral] artifacts → behavioral_svm.joblib, behavioral_rf.joblib, behavioral_scaler.joblib")
+    print("[behavioral] artifacts → behavioral_svm.joblib, behavioral_rf.joblib, behavioral_scaler.joblib")
     return metrics
 
 

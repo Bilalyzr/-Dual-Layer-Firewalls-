@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 
+import numpy
 import torch
 import torch.nn as nn
 
@@ -68,8 +69,6 @@ def get_model() -> KeystrokeTransformer:
 @torch.no_grad()
 def embed_batch(seqs) -> "numpy.ndarray":
     """Embed (N, seq_len, 2) sequences → (N, EMBED_DIM). Drop-in for lstm_model.embed_batch."""
-    import numpy as np
-
     m = get_model()
     x = torch.from_numpy(seqs.astype("float32")).to(_device)
     return m(x).cpu().numpy().astype("float32")

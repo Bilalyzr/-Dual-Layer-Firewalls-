@@ -11,7 +11,6 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 RF_PATH = MODEL_DIR / "behavioral_rf.joblib"
@@ -73,7 +72,6 @@ def classify_risk(features: np.ndarray, anomaly_score: float) -> dict:
     rf = _load()
     # Append anomaly_score as an extra feature.
     X = np.append(features, anomaly_score).reshape(1, -1)
-    pred = rf.predict(X)[0]  # binary: 0=normal, 1=anomalous
     proba = rf.predict_proba(X)[0]
     # Binary RF: proba has 2 entries [P(normal), P(anomalous)]
     p_normal = float(proba[0]) if len(proba) > 0 else 1.0

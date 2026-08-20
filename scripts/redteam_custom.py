@@ -11,7 +11,6 @@ plus benign controls that MUST pass.
 """
 from __future__ import annotations
 
-import json
 import sys
 import uuid
 
@@ -62,7 +61,9 @@ def v2_blocked(client: httpx.Client, prompt: str) -> tuple[bool, float]:
 
 
 def main() -> int:
-    site_hits = v2_hits = 0
+    site_hits = v2_hits = combined_hits = 0
+    missed: list[str] = []
+    falsely_blocked: list[str] = []
     print("=" * 78)
     print("CUSTOM ATTACK BATTERY (novel prompts, not in any dataset)")
     print("=" * 78)
@@ -72,6 +73,10 @@ def main() -> int:
             vb, vp = v2_blocked(c, p)
             site_hits += sb
             v2_hits += vb
+            if sb or vb:
+                combined_hits += 1
+            else:
+                missed.append(p)
             flag = "BLOCKED " if (sb or vb) else "!!!!MISS"
             print(f"[{flag}] site={'B' if sb else 'allow'}({sp:.2f}) "
                   f"v2={'B' if vb else 'allow'}({vp:.2f}) | {p[:58]}")
@@ -84,14 +89,19 @@ def main() -> int:
             vb, vp = v2_blocked(c, p)
             ok = (not sb) and (not vb)
             benign_ok += ok
+            if not ok:
+                falsely_blocked.append(p)
             print(f"[{'allowed ' if ok else '!!!FALS'}] site({'B' if sb else 'a'} {sp:.2f}) "
                   f"v2({'B' if vb else 'a'} {vp:.2f}) | {p[:58]}")
 
     print("=" * 78)
     print(f"ATTACKS BLOCKED : site {site_hits}/{len(ATTACKS)} · v2 {v2_hits}/{len(ATTACKS)} · "
-          f"combined {(site_hits > 0) * 0 + len([1 for _ in ATTACKS]) and 'see rows'}")
+          f"combined {combined_hits}/{len(ATTACKS)}")
     print(f"BENIGN ALLOWED  : {benign_ok}/{len(BENIGN)}")
-    total_miss = [p for p in ATTACKS]  # summary computed above per-row
+    for p in missed:
+        print(f"  MISSED (both paths allowed): {p}")
+    for p in falsely_blocked:
+        print(f"  FALSE POSITIVE (benign blocked): {p}")
     ok = benign_ok == len(BENIGN) and site_hits == len(ATTACKS) and v2_hits == len(ATTACKS)
     print("RESULT:", "ALL CLEAR — every custom attack blocked, every benign served"
           if ok else "GAPS FOUND — see MISS/FALS rows above")
