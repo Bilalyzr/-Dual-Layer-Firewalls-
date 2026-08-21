@@ -18,6 +18,15 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Load .env (base) then .env.local (overrides) so local runs match the docs.
+for _envfile in (Path(__file__).resolve().parent.parent / ".env",
+                 Path(__file__).resolve().parent.parent / ".env.local"):
+    if _envfile.exists():
+        for _line in _envfile.read_text().splitlines():
+            if _line.strip() and not _line.lstrip().startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT / "models"
 MODEL_DIR_LEGACY = ROOT / "engine" / "models"  # artifacts from the Tier-1 classifier
