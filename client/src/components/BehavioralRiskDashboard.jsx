@@ -80,7 +80,7 @@ export default function BehavioralRiskDashboard({ userId }) {
     : "";
 
   return (
-    <section className="panel bio-panel">
+    <section className="panel">
       <div className="panel-head">
         <h2>Behavioral Risk Analysis</h2>
         <span className={`dot ${connected ? "dot-on" : "dot-off"}`} />
@@ -206,7 +206,7 @@ export default function BehavioralRiskDashboard({ userId }) {
       </div>
 
       {/* Live events feed */}
-      <ul className="feed bio-feed" style={{ minHeight: 96 }}>
+      <ul className="feed" style={{ maxHeight: 200 }}>
         {behavior.length === 0 && <li className="muted">No behavioral events. Click a button above.</li>}
         {behavior.slice(0, 10).map((b, i) => (
           <li key={i} className="feed-item">

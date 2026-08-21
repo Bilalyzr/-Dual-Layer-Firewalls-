@@ -40,21 +40,14 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root {
-  height: 100%;
+  min-height: 100vh;
   background: var(--bg-0);
   color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
-  overflow: hidden;
+  overflow-x: hidden;
 }
-
-/* App shell: header + statusbar fixed, dashboard fills the rest — no page scroll. */
-#root {
-  display: flex;
-  flex-direction: column;
-}
-.topbar, .statusbar { flex: 0 0 auto; }
 
 body {
   background:
@@ -255,34 +248,20 @@ summary:focus-visible,
    LAYOUT
    ========================================================================== */
 .grid {
-  flex: 1 1 auto;
-  min-height: 0;
   display: grid;
   grid-template-columns: 0.95fr 1.05fr;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 12px 16px 14px;
+  gap: 18px;
+  padding: 18px 28px 32px;
 }
 /* Full-width band inside the 2-column grid (KPI strip on top, wide table below). */
-.grid .row-full { grid-column: 1 / -1; min-height: 0; }
-/* Wide table band scrolls internally instead of stretching the page. */
-.table-band { max-height: 216px; overflow: hidden; display: flex; }
-.table-band .panel { flex: 1 1 auto; overflow-y: auto; }
+.grid .row-full { grid-column: 1 / -1; }
 /* KPI cards spread across the whole width when the strip is full-width. */
 .row-full .risk-cards-grid { grid-template-columns: repeat(6, 1fr); }
-.col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-/* Panels that absorb leftover column height (kill dead space under short columns). */
-.panel.chat-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.panel.bio-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
-.bio-feed { flex: 1 1 auto; min-height: 96px; max-height: none; }
-/* Narrow screens: back to natural document flow (stack + page scroll). */
 @media (max-width: 1024px) {
-  html, body, #root { height: auto; overflow: auto; }
-  .grid { display: block; height: auto; }
-  .grid .row-full, .col, .chat-panel, .bio-panel { max-height: none; }
-  .chat-panel, .bio-panel { overflow: visible; }
+  .grid { grid-template-columns: 1fr; }
   .row-full .risk-cards-grid { grid-template-columns: repeat(3, 1fr); }
 }
+.col { display: flex; flex-direction: column; gap: 18px; }
 
 /* ==========================================================================
    GLASS PANELS — the core 3D element
@@ -294,7 +273,7 @@ summary:focus-visible,
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--panel-edge);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 18px 20px;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
@@ -380,14 +359,12 @@ summary:focus-visible,
    CHAT PANEL
    ========================================================================== */
 .chat-log {
-  flex: 1 1 auto;
-  min-height: 80px;
-  max-height: none;
+  max-height: 340px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   padding-right: 4px;
 }
 .msg {
@@ -531,7 +508,7 @@ summary:focus-visible,
 /* ==========================================================================
    FEED / LISTS
    ========================================================================== */
-.feed { list-style: none; margin: 8px 0 0; max-height: 240px; overflow-y: auto; padding-right: 4px; }
+.feed { list-style: none; margin: 10px 0 0; max-height: 300px; overflow-y: auto; padding-right: 4px; }
 .feed-item {
   display: flex;
   align-items: center;
@@ -1032,7 +1009,7 @@ summary:focus-visible,
 .decision-json { background: rgba(2,6,16,0.8); border: 1px solid rgba(80,220,255,0.1); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 10px; color: var(--cyan); margin-top: 6px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
 .risk-cards-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
 @media (max-width:500px){ .risk-cards-grid{grid-template-columns:repeat(2,1fr);} }
-.risk-card { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 8px 4px; text-align: center; }
+.risk-card { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 10px 6px; text-align: center; }
 .risk-card-val { font-family: var(--mono); font-size: 22px; font-weight: 700; text-shadow: 0 0 10px currentColor; }
 .risk-card-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
 .risk-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }

@@ -116,11 +116,15 @@ export default function App() {
           <SlaPanel />
         </div>
 
-        {/* Row 3 — wide session risk table (internal scroll band) */}
-        <div className="row-full table-band">
+        {/* Row 3 — wide session risk table (full width) */}
+        <div className="row-full">
           <RiskTable />
         </div>
       </main>
+
+      <footer className="footer">
+        DUAL-LAYER AI FIREWALL
+      </footer>
 
       {faceModal && (
         <FaceAuthModal
