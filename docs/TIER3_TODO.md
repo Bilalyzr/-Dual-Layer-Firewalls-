@@ -97,7 +97,7 @@ Move from *observe* to *act*: block repeat offenders automatically.
 
 ## EPIC G — Biometric enhancements  · Effort L · 🟢 · ⚠️ consent-gated
 - [x] ✅ Mouse-dynamics layer (speed, click, cadence, turn-rate): `client/src/hooks/useMouseCapture.js` + `proxy/routes/mouse.js` + `engine/biometric/fusion.py`.
-- [x] ✅ Transformer-based sequence model: `engine/biometric/transformer_model.py` (2-layer Transformer encoder, mean-pooled → 16-d embed; drop-in via `USE_TRANSFORMER=true`).
+- [x] Transformer-based sequence model — implemented in EPIC G, later removed as unused (LSTM path is the live one).
 - [x] ✅ Online/incremental baseline adaptation: `engine/biometric/online.py` (EWMA, α=0.05 — conservative).
 - [x] ✅ Multi-modal fusion: `engine/biometric/fusion.py` — weighted late fusion of keystroke + mouse + session (8 tests).
 - [x] ✅ Touch biometrics (pressure/area/swipe): `client/src/hooks/useTouchCapture.js` + `proxy/routes/touch.js`. Works on touchscreens/tablets; inert on desktop.

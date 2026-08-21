@@ -94,7 +94,7 @@ Built across three tiers (MVP → Enterprise → Advanced) with 327+ automated t
 | 3.6 | Baseline cold-start fallback | ✅ | `engine/biometric/anomaly.py` |
 | 3.7 | Baseline drift handling (online adaptation) | ✅ | `engine/biometric/online.py` (EWMA) |
 | G.1 | Mouse-dynamics layer | ✅ | `client/src/hooks/useMouseCapture.js` + `routes/mouse.js` |
-| G.2 | Transformer sequence model | ✅ | `engine/biometric/transformer_model.py` |
+| G.2 | Transformer sequence model | removed (unused) | — |
 | G.3 | Multi-modal fusion (keystroke+mouse+session) | ✅ | `engine/biometric/fusion.py` |
 | G.4 | Touch biometrics (pressure/area/swipe) | ✅ | `client/src/hooks/useTouchCapture.js` + `routes/touch.js` |
 | E.1 | Client-side fingerprinting (canvas/WebGL/audio) | ✅ | `client/src/lib/fingerprint.js` (consent-gated) |
@@ -156,7 +156,7 @@ Built across three tiers (MVP → Enterprise → Advanced) with 327+ automated t
 | H.3 | Alerting pipeline (PagerDuty/OpsGenie) | ✅ | `proxy/observability/alerting.js` |
 | H.4 | System-metric anomaly detection (DDoS warning) | ✅ | `proxy/observability/sla.js` |
 | J.1 | Kubernetes Helm charts (HPA, PDB) | ✅ | `deploy/helm/dual-layer-firewall/` |
-| J.2 | GPU inference service (CUDA Dockerfile) | ✅ | `gpu-engine/Dockerfile` + `gpuRouter.js` |
+| J.2 | GPU inference service (CUDA Dockerfile) | removed (unused) | — |
 
 ---
 
@@ -224,7 +224,7 @@ Epics A–H: Sessions, WebAuthn step-up, Llama Guard 4, AES-256 encryption, TLS 
 | Local dev | `node scripts/runner.js` → http://localhost:5174 | Free |
 | Cloud (free tier) | Vercel (frontend) + Render (proxy+engine) + Atlas (DB) | $0 |
 | Cloud (production) | Docker Compose / Kubernetes Helm | Variable |
-| GPU inference | `gpu-engine/Dockerfile` (CUDA 12.4) | GPU node cost |
+| GPU inference | removed (unused) | — |
 
 See `DEPLOY.md` for the full step-by-step Vercel + Render + Atlas walkthrough.
 
