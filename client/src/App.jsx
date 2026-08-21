@@ -9,6 +9,7 @@
 import { useState, useEffect } from "react";
 import { ensureSession } from "./lib/api";
 import { collectFingerprint, sendFingerprint } from "./lib/fingerprint";
+import { hasConsent, loadConsent } from "./lib/consent";
 import { resolvePublicIp } from "./lib/publicIp";
 import Logo from "./components/Logo.jsx";
 import BootLoader from "./components/BootLoader.jsx";
@@ -45,6 +46,11 @@ export default function App() {
     if (!authUser) return;
     let alive = true;
     (async () => {
+      // Sync the consent mirror from the server, then capture ONLY if the
+      // user granted the "fingerprint" category (ConsentBanner). Without
+      // this gate the server correctly answers 403 consent_required.
+      await loadConsent(userId).catch(() => {});
+      if (!alive || !hasConsent("fingerprint")) return;
       const fp = await collectFingerprint(true);
       if (alive) await sendFingerprint(fp, userId);
     })();
