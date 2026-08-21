@@ -111,6 +111,18 @@ class Settings:
     # deterministic offline responder so the pipeline stays testable.
     llm_offline_echo: bool = field(default_factory=lambda: _envb("LLM_OFFLINE_ECHO", True))
 
+    # ---- L6 local fallback provider (Ollama on localhost) ----------------- #
+    # Used when the primary provider is unreachable or rate-limited, before
+    # the offline responder. Empty string disables the hop.
+    llm_fallback_url: str = field(default_factory=lambda: _env("LLM_FALLBACK_URL", ""))
+    llm_fallback_model: str = field(
+        default_factory=lambda: _env("LLM_FALLBACK_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+    )
+    # CPU inference of a 7B model is slow — give it room.
+    llm_fallback_timeout_s: float = field(
+        default_factory=lambda: _envf("LLM_FALLBACK_TIMEOUT_S", 120.0)
+    )
+
     # ---- L7 Egress Output Guardrail ------------------------------------- #
     output_filter_enabled: bool = field(default_factory=lambda: _envb("OUTPUT_FILTER_ENABLED", True))
     output_block_threshold: float = field(

@@ -40,6 +40,29 @@ def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None =
         _STATUS.update(mode="litellm", model=chosen, detail="ok")
         return answer.choices[0].message.content or ""
     except Exception as exc:
+        # Local fallback provider (e.g. Ollama) — rides through primary-provider
+        # outages/rate-limits before the offline responder is used.
+        if SETTINGS.llm_fallback_url:
+            try:
+                import litellm  # type: ignore
+
+                fb = litellm.completion(
+                    model=f"openai/{SETTINGS.llm_fallback_model}",
+                    api_base=SETTINGS.llm_fallback_url,
+                    api_key="ollama",
+                    messages=[
+                        {"role": "system", "content":
+                            "You are a helpful assistant. Answer using the provided reference "
+                            "context when available. Follow all safety guidelines."},
+                        {"role": "user", "content": f"{context_block}{prompt}"},
+                    ],
+                    timeout=SETTINGS.llm_fallback_timeout_s,
+                )
+                _STATUS.update(mode="local-fallback", model=SETTINGS.llm_fallback_model,
+                               detail=f"primary failed: {type(exc).__name__}")
+                return fb.choices[0].message.content or ""
+            except Exception:
+                pass
         if SETTINGS.llm_offline_echo:
             _STATUS.update(mode="offline-echo", model=chosen,
                            detail=f"{type(exc).__name__}: {exc}")
