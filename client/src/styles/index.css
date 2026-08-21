@@ -249,12 +249,17 @@ summary:focus-visible,
    ========================================================================== */
 .grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: 0.95fr 1.05fr;
   gap: 18px;
   padding: 18px 28px 32px;
 }
+/* Full-width band inside the 2-column grid (KPI strip on top, wide table below). */
+.grid .row-full { grid-column: 1 / -1; }
+/* KPI cards spread across the whole width when the strip is full-width. */
+.row-full .risk-cards-grid { grid-template-columns: repeat(6, 1fr); }
 @media (max-width: 1024px) {
   .grid { grid-template-columns: 1fr; }
+  .row-full .risk-cards-grid { grid-template-columns: repeat(3, 1fr); }
 }
 .col { display: flex; flex-direction: column; gap: 18px; }
 
@@ -280,11 +285,12 @@ summary:focus-visible,
   from { opacity: 0; transform: translateY(12px) scale(0.99); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.col-left .panel:nth-child(1) { animation-delay: 0.05s; }
-.col-left .panel:nth-child(2) { animation-delay: 0.15s; }
-.col-right .panel:nth-child(1) { animation-delay: 0.1s; }
+.col-left .panel:nth-child(1) { animation-delay: 0.1s; }
+.col-left .panel:nth-child(2) { animation-delay: 0.25s; }
+.col-right .panel:nth-child(1) { animation-delay: 0.05s; }
 .col-right .panel:nth-child(2) { animation-delay: 0.2s; }
-.col-right .panel:nth-child(3) { animation-delay: 0.3s; }
+.col-right .panel:nth-child(3) { animation-delay: 0.35s; }
+.row-full .panel { animation-delay: 0.02s; }
 
 /* Glowing top edge */
 .panel::before {

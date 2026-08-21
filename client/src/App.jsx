@@ -100,16 +100,25 @@ export default function App() {
       <StatusBar />
 
       <main className="grid">
+        {/* Row 1 — fleet KPI strip (full width) */}
+        <div className="row-full">
+          <RiskSummary />
+        </div>
+
+        {/* Row 2 — interaction column (left) · flagship analysis column (right) */}
         <div className="col col-left">
           <ChatPanel userId={userId} />
-          <MetricsPanel />
+          <ThreatFeed />
         </div>
         <div className="col col-right">
-          <RiskSummary />
           <BehavioralRiskDashboard userId={userId} />
-          <RiskTable />
-          <ThreatFeed />
+          <MetricsPanel />
           <SlaPanel />
+        </div>
+
+        {/* Row 3 — wide session risk table (full width) */}
+        <div className="row-full">
+          <RiskTable />
         </div>
       </main>
 
