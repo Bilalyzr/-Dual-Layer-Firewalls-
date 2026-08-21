@@ -36,6 +36,7 @@ def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None =
                 {"role": "user", "content": f"{context_block}{prompt}"},
             ],
             timeout=SETTINGS.llm_timeout_s,
+            num_retries=1,  # fail fast to the local fallback instead of retrying a dead provider
         )
         _STATUS.update(mode="litellm", model=chosen, detail="ok")
         return answer.choices[0].message.content or ""
@@ -57,6 +58,7 @@ def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None =
                         {"role": "user", "content": f"{context_block}{prompt}"},
                     ],
                     timeout=SETTINGS.llm_fallback_timeout_s,
+                    num_retries=0,
                 )
                 _STATUS.update(mode="local-fallback", model=SETTINGS.llm_fallback_model,
                                detail=f"primary failed: {type(exc).__name__}")

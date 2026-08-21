@@ -178,7 +178,9 @@ export async function chatCompletionMessages(messages, opts = {}) {
       const r = await fetch(`${fb}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: fallbackModel(), messages, temperature, max_tokens: maxTokens }),
+        // keep_alive holds the model in RAM so the NEXT fallback is warm
+        // (~8s CPU reply instead of ~25s cold load).
+        body: JSON.stringify({ model: fallbackModel(), messages, temperature, max_tokens: maxTokens, keep_alive: "30m" }),
         signal: AbortSignal.timeout(fallbackTimeout()),
       });
       if (!r.ok) return null;
