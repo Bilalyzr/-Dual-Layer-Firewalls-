@@ -19,7 +19,19 @@ def status() -> dict:
 
 def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None = None) -> str:
     """Route `prompt` (+safe RAG context) to the best provider; return text."""
-    chosen = model or SETTINGS.default_llm_model
+    chosen = model or SETTINGS.llm_model or SETTINGS.default_llm_model
+    # GLM (or any OpenAI-compatible provider) as PRIMARY — same LLM_* env the
+    # proxy uses. Falls through to local Ollama, then the offline responder.
+    primary_base = SETTINGS.llm_base_url if not model else None
+    primary_kwargs = {}
+    if primary_base and SETTINGS.llm_api_key:
+        primary_kwargs = {
+            "model": f"openai/{chosen}",
+            "api_base": primary_base,
+            "api_key": SETTINGS.llm_api_key,
+        }
+    else:
+        primary_kwargs = {"model": chosen}
     context_block = ""
     if rag_docs:
         joined = "\n\n".join(f"[{i+1}] {d}" for i, d in enumerate(rag_docs[:3]))
@@ -28,7 +40,7 @@ def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None =
         import litellm  # type: ignore
 
         answer = litellm.completion(
-            model=chosen,
+            **primary_kwargs,
             messages=[
                 {"role": "system", "content":
                     "You are a helpful assistant. Answer using the provided reference "
@@ -36,7 +48,7 @@ def complete(prompt: str, rag_docs: list[str] | None = None, model: str | None =
                 {"role": "user", "content": f"{context_block}{prompt}"},
             ],
             timeout=SETTINGS.llm_timeout_s,
-            num_retries=1,  # fail fast to the local fallback instead of retrying a dead provider
+            num_retries=0,  # one shot — a slow/dead provider hands off to the local fallback immediately
         )
         _STATUS.update(mode="litellm", model=chosen, detail="ok")
         return answer.choices[0].message.content or ""

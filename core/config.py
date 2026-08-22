@@ -18,14 +18,20 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Load .env (base) then .env.local (overrides) so local runs match the docs.
+# Env precedence (matches proxy/config/env.js): real process env > .env.local
+# (local dev) > .env (docker/defaults). Later files OVERWRITE earlier ones for
+# keys the real environment didn't set, so .env's api.openai.com defaults can
+# never shadow .env.local's real provider config.
+_PROC_ENV_KEYS = set(os.environ)
 for _envfile in (Path(__file__).resolve().parent.parent / ".env",
                  Path(__file__).resolve().parent.parent / ".env.local"):
     if _envfile.exists():
         for _line in _envfile.read_text().splitlines():
             if _line.strip() and not _line.lstrip().startswith("#") and "=" in _line:
                 _k, _, _v = _line.partition("=")
-                os.environ.setdefault(_k.strip(), _v.strip())
+                _k, _v = _k.strip(), _v.strip()
+                if _v and _k not in _PROC_ENV_KEYS:
+                    os.environ[_k] = _v
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT / "models"
@@ -106,6 +112,11 @@ class Settings:
 
     # ---- L6 Upstream LLM Execution (LiteLLM router) --------------------- #
     default_llm_model: str = field(default_factory=lambda: _env("DEFAULT_LLM_MODEL", "gpt-4o-mini"))
+    # Primary provider via OpenAI-compatible env (same LLM_* the proxy uses —
+    # e.g. GLM at open.bigmodel.cn). Empty key => litellm default provider.
+    llm_base_url: str = field(default_factory=lambda: _env("LLM_BASE_URL", ""))
+    llm_api_key: str = field(default_factory=lambda: _env("LLM_API_KEY", ""))
+    llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", ""))
     llm_timeout_s: float = field(default_factory=lambda: _envf("LLM_TIMEOUT_S", 30.0))
     # When no provider key is configured the router degrades to a
     # deterministic offline responder so the pipeline stays testable.
