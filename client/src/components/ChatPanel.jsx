@@ -64,13 +64,18 @@ export default function ChatPanel({ userId }) {
         return;
       }
       if (data.blocked) {
+        const prob = data.verdict?.classifier?.threatProbability;
         setMessages((m) => [
           ...m,
           {
             role: "system",
-            text: `⛔ BLOCKED by AI Firewall — ${data.categoryTitle || "Policy"} (${data.category})`,
+            text: `⛔ BLOCKED by AI Firewall — ${data.categoryTitle || "Policy"} (${data.category})`
+              + (data.blockReason ? `\nReason: ${data.blockReason}` : "")
+              + (prob != null ? `\nRisk score: ${Math.round(prob * 100)}/100` : "")
+              + (data.wordScores?.weightage != null ? ` · Word weightage: ${Math.round(data.wordScores.weightage * 100)}%` : ""),
             blocked: true,
             verdict: data.verdict,
+            wordScores: data.wordScores,
           },
         ]);
       } else if (data.error) {
@@ -138,6 +143,20 @@ export default function ChatPanel({ userId }) {
           <div key={i} className={`msg msg-${m.role}${m.blocked ? " msg-blocked" : ""}`}>
             <div className="msg-role">{m.role}</div>
             <div className="msg-text">{m.text}</div>
+            {m.wordScores && (m.wordScores.negative_terms?.length > 0 || m.wordScores.positive_terms?.length > 0) && (
+              <div className="word-scores">
+                {m.wordScores.negative_terms?.slice(0, 10).map((t, j) => (
+                  <span key={`n${j}`} className="word-chip word-chip-neg" title={`negative weight −${t.weight}`}>
+                    {t.term} <b>−{t.weight}</b>
+                  </span>
+                ))}
+                {m.wordScores.positive_terms?.slice(0, 6).map((t, j) => (
+                  <span key={`p${j}`} className="word-chip word-chip-pos" title={`positive weight +${t.weight}`}>
+                    {t.term} <b>+{t.weight}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             {m.verdict && (
               <div className="msg-meta">
                 heuristic {(m.verdict.heuristic?.latencyMs ?? 0).toFixed(2)}ms ·

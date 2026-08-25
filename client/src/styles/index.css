@@ -1020,3 +1020,19 @@ summary:focus-visible,
 .profile-detail { padding: 8px; border-radius: 6px; background: rgba(2,6,16,0.5); }
 .profile-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 4px 12px; font-size: 11px; }
 .profile-grid .muted { font-size: 9px; text-transform: uppercase; }
+
+/* ---- Blocked-message word-injection chips (trial-update: highlight terms) -- */
+.word-scores { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.word-chip {
+  font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+  border-radius: 10px; border: 1px solid; letter-spacing: 0.4px;
+}
+.word-chip b { opacity: 0.85; }
+.word-chip-neg {
+  color: var(--red); border-color: rgba(255, 56, 96, 0.5);
+  background: rgba(255, 56, 96, 0.1); box-shadow: 0 0 10px rgba(255, 56, 96, 0.15);
+}
+.word-chip-pos {
+  color: var(--green); border-color: rgba(0, 255, 157, 0.4);
+  background: rgba(0, 255, 157, 0.07);
+}

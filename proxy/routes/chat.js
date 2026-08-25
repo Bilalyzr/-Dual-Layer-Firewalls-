@@ -45,6 +45,29 @@ function reportRealtimeSample(prompt, label, risk = 0) {
   }).catch(() => {});
 }
 
+// Trial-update: word-injection breakdown for BLOCKED messages — which exact
+// terms carried negative/positive weight, so the dashboard can highlight them.
+// Fail-soft: blocks must never wait long on this (2s cap, {} on any failure).
+async function fetchWordScores(prompt) {
+  try {
+    const r = await fetch(`${REALTIME_API}/sentiment/score`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: String(prompt || "").slice(0, 4000) }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!r.ok) return {};
+    const d = await r.json();
+    return {
+      negative_terms: d.negative_terms || [],
+      positive_terms: d.positive_terms || [],
+      weightage: d.weightage ?? null,
+    };
+  } catch {
+    return {};
+  }
+}
+
 // Prompt injection → Behavioral Risk Analysis updates DIRECTLY (PRD §35):
 // run the Layer-2 pipeline on the hostile-session context and publish the
 // decision to the SSE stream so the dashboard's EXPLAINABILITY block shows
@@ -186,6 +209,8 @@ router.post("/", async (req, res) => {
       reason: "blocked by AI firewall",
       category,
       categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      blockReason: label,
+      wordScores: await fetchWordScores(prompt),
       verdict: {
         mode: MODE,
         threshold: THRESHOLD,
@@ -236,6 +261,8 @@ router.post("/", async (req, res) => {
         reason: "blocked by AI firewall",
         category,
         categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+        blockReason: label,
+        wordScores: await fetchWordScores(prompt),
         verdict: {
           mode: MODE,
           threshold: THRESHOLD,
@@ -367,6 +394,8 @@ router.post("/", async (req, res) => {
       reason: "blocked by AI firewall",
       category,
       categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
+      blockReason: label,
+      wordScores: await fetchWordScores(prompt),
       verdict,
       latencyMs: +(performance.now() - t0).toFixed(2),
     });
