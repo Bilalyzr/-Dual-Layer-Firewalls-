@@ -124,6 +124,24 @@ export function llmConfig() {
   };
 }
 
+// Keep the local fallback model resident in RAM. Ollama evicts an idle model
+// after keep_alive — the next real request then pays a ~25-30s cold load ON
+// TOP of the primary's timeout, which users experience as a hang. A 1-token
+// ping every 8 minutes costs nothing and keeps replies warm (~5-10s CPU).
+let _warmerStarted = false;
+export function startFallbackWarmer() {
+  if (_warmerStarted || !fallbackUrl()) return;
+  _warmerStarted = true;
+  const ping = () => fetch(`${fallbackUrl()}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: fallbackModel(), messages: [{ role: "user", content: "ok" }], max_tokens: 1, keep_alive: "30m" }),
+    signal: AbortSignal.timeout(90_000),
+  }).catch(() => {});
+  setTimeout(ping, 3_000);        // warm once shortly after boot
+  setInterval(ping, 8 * 60_000);  // and keep it resident
+}
+
 /**
  * Generate a chat completion from a full messages array — used by the Trifecta
  * agents (Phase 5) to give each role its own system prompt + tunable params.

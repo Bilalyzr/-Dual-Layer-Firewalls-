@@ -14,7 +14,7 @@ import { connectStore, storeMode } from "./lib/store.js";
 import { hydrateBans } from "./response/banStore.js";
 import { startSiemRelay, siemEnabled } from "./integrations/siem.js";
 import { log } from "./lib/logger.js";
-import { llmConfig } from "./llm/client.js";
+import { llmConfig, startFallbackWarmer } from "./llm/client.js";
 import { strictReal } from "./lib/strict.js";
 
 // Last-resort safety net. The proxy is a security control with no supervisor in
@@ -77,6 +77,7 @@ export async function startService(role = "all") {
         llmConfigured: llmConfig().configured,
         siem: siemEnabled(),
       });
+      if (role === "all" || role === "gateway") startFallbackWarmer();
       resolve(server);
     });
   });
