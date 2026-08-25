@@ -57,11 +57,13 @@ def _save_state(user_id: str, data: dict) -> None:
 
 def reset(user_id: str) -> None:
     """Session termination hook (PDF §3.3: terminate + reset session state).
-    Strikes persist by design — long-term memory outlives the session."""
+    Strikes persist by design — long-term memory outlives the session.
+    The TIMELINE also persists: it is a forensic record of how the session
+    escalated, and wiping it on the very block it should document would leave
+    the dashboard's escalation chart empty after every attack."""
     try:
         state = redis_client.get_state()
         state.delete(_key(user_id))
-        state.delete(f"session_risk:{user_id}:timeline")
     except Exception:
         pass
 
