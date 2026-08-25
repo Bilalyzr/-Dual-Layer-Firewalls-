@@ -27,12 +27,16 @@ def evaluate(sanitized: SanitizeResult, intent: IntentResult,
              injection_weightage: float = 0.0,
              memory_similarity: float = 0.0) -> Decision:
     # Composite risk: the strongest signal any layer produced this turn
-    # (trial-update #3: word-injection weightage is part of the composite).
+    # (trial-update #3: word-injection weightage is part of the composite;
+    #  T9: memory-similarity and attack-proximity now included too, so a
+    #  pure memory/proximity block can't display a misleadingly low risk).
     risk = max(
         intent.intent_score,
         session.cumulative_risk,
         rag.risk,
         injection_weightage * 0.9,
+        memory_similarity,
+        session.attack_proximity * 0.9,
     )
 
     # L2 — single-turn semantic kill-shot (PDF §3.3: instant termination).
