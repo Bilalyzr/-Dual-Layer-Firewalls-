@@ -283,13 +283,23 @@ class SentimentScoreRequest(ChatCompletionRequest):
 def sentiment_score(req: SentimentScoreRequest):
     """Word + sentence weightage for any prompt. Pure lexicon — no model,
     no embedding, no network: sub-millisecond server-side; `latency_ms`
-    is included so the UI can prove it."""
+    is included so the UI can prove it.
+
+    Trial-update T4: the response is enriched with `semantic` — polarities
+    inferred from Qdrant for words OUTSIDE the static lexicon (nearest
+    embedded lexicon term, cosine >= 0.70). Fail-soft: absent when the
+    vector store is unavailable.
+    """
     import time as _time
 
-    from services.policy_engine import word_sentiment
+    from services.policy_engine import semantic_expand, word_sentiment
 
     t0 = _time.perf_counter()
     text = req.effective_prompt() or ""
     result = word_sentiment(text)
+    result["semantic"] = semantic_expand(text)
+    # Combined view: the stronger of the lexicon and inferred signals.
+    result["combined_weightage"] = max(
+        result["weightage"], result["semantic"].get("weightage", 0.0))
     result["latency_ms"] = round(1000 * (_time.perf_counter() - t0), 3)
     return result

@@ -250,3 +250,74 @@ def blocked_memory_count() -> int:
         return int(client.count(BLOCKED_COLLECTION, exact=True).count)
     except Exception:
         return 0
+
+
+# --------------------------------------------------------------------------- #
+# SEMANTIC LEXICON (trial-update T4): every policy-engine term embedded into a
+# Qdrant collection so words OUTSIDE the static lexicon can inherit polarity
+# from their nearest known term (cosine >= threshold). Trained once, persists
+# on disk with the rest of the store.
+# --------------------------------------------------------------------------- #
+LEXICON_COLLECTION = "lexicon_terms"
+_LEXICON_SEEDED = False
+
+
+def ensure_lexicon_collection() -> bool:
+    """Create + seed the semantic lexicon (idempotent). Attack terms carry
+    negative polarity, benign terms positive — payload is the signed weight."""
+    global _LEXICON_SEEDED
+    if _LEXICON_SEEDED:
+        return True
+    client = get_client()
+    if client is None:
+        return False
+    try:
+        from qdrant_client import models  # type: ignore
+
+        from services.embedding_service import EMBED_DIM, embed_batch
+        from services.policy_engine import BENIGN_LEXICON, INJECTION_LEXICON
+
+        if not client.collection_exists(LEXICON_COLLECTION):
+            client.create_collection(
+                collection_name=LEXICON_COLLECTION,
+                vectors_config=models.VectorParams(
+                    size=EMBED_DIM, distance=models.Distance.COSINE),
+            )
+        if client.count(LEXICON_COLLECTION, exact=True).count > 0:
+            _LEXICON_SEEDED = True
+            return True
+        terms = list(INJECTION_LEXICON.items()) + list(BENIGN_LEXICON.items())
+        vectors = embed_batch([t for t, _ in terms])
+        client.upsert(
+            collection_name=LEXICON_COLLECTION,
+            points=[models.PointStruct(
+                id=idx,
+                vector=vec.tolist(),
+                # signed polarity: attack terms negative, benign positive
+                payload={"term": term, "polarity": -w if term in INJECTION_LEXICON else w},
+            ) for idx, ((term, w), vec) in enumerate(zip(terms, vectors))],
+        )
+        _LEXICON_SEEDED = True
+        return True
+    except Exception:
+        return False
+
+
+def lookup_lexicon(embedding: list[float]) -> tuple[float, dict]:
+    """(best cosine, {term, polarity}) for an arbitrary word vector.
+    (0.0, {}) when unavailable — callers fail-soft to lexicon-only scoring."""
+    client = get_client()
+    if client is None or not embedding:
+        return 0.0, {}
+    try:
+        if not client.collection_exists(LEXICON_COLLECTION):
+            return 0.0, {}
+        hits = client.query_points(
+            collection_name=LEXICON_COLLECTION, query=embedding,
+            limit=1, with_payload=True,
+        ).points
+        if not hits:
+            return 0.0, {}
+        return float(hits[0].score), dict(hits[0].payload or {})
+    except Exception:
+        return 0.0, {}

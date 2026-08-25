@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[firewall] rag init skipped: {exc}")
     try:
+        if qdrant_client.ensure_lexicon_collection():
+            print("[firewall] semantic lexicon trained (Qdrant)")
+    except Exception as exc:
+        print(f"[firewall] semantic lexicon skipped: {exc}")
+    try:
         from services.embedding_service import _load
 
         _load()

@@ -245,6 +245,77 @@ def word_sentiment(text: str) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# SEMANTIC LEXICON EXPANSION (trial-update T4). Words outside the static
+# lexicon inherit polarity from their nearest embedded lexicon term via
+# Qdrant — so novel vocabulary ("infostealer", "passcodes") still scores.
+# Never called from the sub-ms hot path; used by the /sentiment/score API
+# (display + block evidence) and any caller that can afford a few ms.
+# --------------------------------------------------------------------------- #
+_SEMANTIC_MIN_SIM = 0.70          # cosine floor to inherit a polarity
+_SEMANTIC_MAX_WORDS = 6           # cap per prompt (latency guard)
+_SEMANTIC_STOPWORDS = frozenset(
+    "the a an and or of to in for on with is are was were be been this that "
+    "these those it its as at by from you your our their his her they them "
+    "we i me my please can could would should will shall may might must not "
+    "no yes do does did done have has had about into over under then than "
+    "there here what which who whom when where why how all any some more most".split())
+
+
+def semantic_expand(text: str) -> dict:
+    """Enrich a word_sentiment() result with Qdrant-inferred polarities.
+
+    Returns {'negative': [...], 'positive': [...], 'weightage': float} where
+    each term carries {term, weight, nearest, similarity}. Empty when the
+    vector store or embedding model is unavailable (fail-soft).
+    """
+    try:
+        from services import qdrant_client as _q
+        from services.embedding_service import embed_batch
+
+        if not _q.ensure_lexicon_collection():
+            return {"negative": [], "positive": [], "weightage": 0.0}
+
+        low = deobfuscate(text or "")
+        matched = {t["term"] for side in (_match_terms(low)) for t in side}
+        candidates: list[str] = []
+        for m in _WORD_RE.finditer(low):
+            w = m.group(0)
+            if (len(w) >= 4 and w not in matched and w not in _SEMANTIC_STOPWORDS
+                    and w not in _ALL_LEX and w not in candidates):
+                candidates.append(w)
+        if not candidates:
+            return {"negative": [], "positive": [], "weightage": 0.0}
+        candidates = candidates[:_SEMANTIC_MAX_WORDS]
+
+        neg: list[dict] = []
+        pos: list[dict] = []
+        neg_total = 0.0
+        pos_total = 0.0
+        vecs = embed_batch(candidates)
+        for w, vec in zip(candidates, vecs):
+            sim, payload = _q.lookup_lexicon(vec.tolist())
+            if sim < _SEMANTIC_MIN_SIM:
+                continue
+            polarity = float(payload.get("polarity", 0.0))
+            if not polarity:
+                continue
+            inferred = round(abs(polarity) * sim, 4)
+            entry = {"term": w, "weight": inferred,
+                     "nearest": payload.get("term", ""), "similarity": round(sim, 4)}
+            if polarity < 0:
+                neg.append(entry)
+                neg_total += inferred
+            else:
+                pos.append(entry)
+                pos_total += inferred
+        # Same convention as _score_terms: net = attack magnitude − benign.
+        weightage = round(min(1.0, max(0.0, neg_total - pos_total) / INJECTION_SATURATION), 4)
+        return {"negative": neg, "positive": pos, "weightage": weightage}
+    except Exception:
+        return {"negative": [], "positive": [], "weightage": 0.0}
+
+
 def scrub_pii(text: str) -> tuple[str, list[str]]:
     """Mask every PII hit; returns (clean_text, kinds_found)."""
     found: list[str] = []
