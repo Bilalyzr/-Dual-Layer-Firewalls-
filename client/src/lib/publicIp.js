@@ -14,8 +14,17 @@
  * at most once per tab.
  */
 const KEY = "dlf.publicIp";
-const ECHO_URL = import.meta.env.VITE_PUBLIC_IP_URL || "https://api.ipify.org?format=json";
-const TIMEOUT_MS = 3000;
+// Provider chain: any single echo service can be blocked or down on a given
+// network, so we try each in order until one answers. First two return JSON,
+// the rest return plain text.
+const PROVIDERS = [
+  (import.meta.env.VITE_PUBLIC_IP_URL ? [import.meta.env.VITE_PUBLIC_IP_URL, "json"] : null),
+  ["https://api.ipify.org?format=json", "json"],
+  ["https://ipapi.co/json/", "json"],
+  ["https://ifconfig.me/ip", "text"],
+  ["https://icanhazip.com", "text"],
+].filter(Boolean);
+const TIMEOUT_MS = 5000;
 
 let cached = null;
 let inflight = null;
@@ -37,28 +46,34 @@ export async function resolvePublicIp() {
   if (stored) return stored;
   if (inflight) return inflight;
 
-  inflight = (async () => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetch(ECHO_URL, { cache: "no-store", signal: ctrl.signal });
-      const data = await res.json();
-      const ip = (data && (data.ip || data.address)) || null;
-      if (ip) {
-        cached = ip;
-        try {
-          sessionStorage.setItem(KEY, ip);
-        } catch {
-          /* ignore */
+  const attempt = (async () => {
+    for (const [url, kind] of PROVIDERS) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+      try {
+        const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
+        if (!res.ok) continue;
+        const body = kind === "json" ? await res.json() : (await res.text()).trim();
+        const ip = (body && (body.ip || body.address)) || (/^\d{1,3}(\.\d{1,3}){3}$/.test(body) ? body : null);
+        if (ip) {
+          cached = ip;
+          try {
+            sessionStorage.setItem(KEY, ip);
+          } catch {
+            /* ignore */
+          }
+          return cached;
         }
+      } catch {
+        // provider blocked/down — next in the chain
+      } finally {
+        clearTimeout(timer);
       }
-      return cached;
-    } catch {
-      return null; // offline / blocked / timed out — feed falls back to loopback
-    } finally {
-      clearTimeout(timer);
-      inflight = null;
     }
+    return null; // every provider failed — feed falls back to loopback
   })();
+  // Allow a later retry when the whole chain failed (cache still empty).
+  attempt.finally(() => { if (!cached) inflight = null; });
+  inflight = attempt;
   return inflight;
 }
