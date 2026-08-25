@@ -394,7 +394,9 @@ router.post("/", async (req, res) => {
       reason: "blocked by AI firewall",
       category,
       categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
-      blockReason: label,
+      // `label` only exists on the engine-ready alert path; fall back for the
+      // degraded (engine down) path where only the classifier verdict exists.
+      blockReason: (typeof label === "string" && label) || `ML classifier score ${threatProb?.toFixed?.(2) ?? "?"} ≥ threshold`,
       wordScores: await fetchWordScores(prompt),
       verdict,
       latencyMs: +(performance.now() - t0).toFixed(2),
