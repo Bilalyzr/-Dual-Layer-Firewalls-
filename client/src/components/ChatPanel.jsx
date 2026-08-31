@@ -3,7 +3,7 @@
  * Send posts to /api/chat, which runs the full Layer-1 pipeline; blocked
  * responses are surfaced distinctly.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
 
@@ -13,6 +13,13 @@ export default function ChatPanel({ userId }) {
   const [busy, setBusy] = useState(false);
   const [stepUp, setStepUp] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState(null);
+  const logRef = useRef(null);
+
+  // Keep the newest message in view — without this the log stays scrolled to
+  // the top and new replies arrive invisibly below the fold.
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
   const send = async (override) => {
     const text = (typeof override === "string" ? override : input).trim();
@@ -138,7 +145,18 @@ export default function ChatPanel({ userId }) {
         <h2>LLM Chat <small>(behind AI Firewall)</small></h2>
       </div>
 
-      <div className="chat-log">
+      <div className="chat-log" ref={logRef}>
+        {messages.length === 0 && (
+          <div className="chat-empty">
+            <div className="chat-empty-icon">🛡️</div>
+            <div className="chat-empty-title">Firewall chat ready</div>
+            <div className="chat-empty-sub">
+              Send a prompt to test the 7-layer pipeline — or try an attack
+              like <code>“ignore all previous instructions”</code> and watch it
+              get blocked with full evidence.
+            </div>
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`msg msg-${m.role}${m.blocked ? " msg-blocked" : ""}`}>
             <div className="msg-role">{m.role}</div>
@@ -167,6 +185,12 @@ export default function ChatPanel({ userId }) {
             )}
           </div>
         ))}
+        {busy && (
+          <div className="msg msg-assistant">
+            <div className="msg-role">assistant</div>
+            <div className="chat-typing"><i /><i /><i /> inspecting &amp; answering…</div>
+          </div>
+        )}
       </div>
 
       <textarea

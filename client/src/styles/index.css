@@ -1036,3 +1036,76 @@ summary:focus-visible,
   color: var(--green); border-color: rgba(0, 255, 157, 0.4);
   background: rgba(0, 255, 157, 0.07);
 }
+
+/* ==========================================================================
+   UI FINE-TUNE PASS — polish on the existing theme/layout
+   ========================================================================== */
+/* Chat: user speaks from the right (standard chat UX), bots from the left */
+.msg-user {
+  align-self: flex-end;
+  max-width: 88%;
+  border-left: 1px solid rgba(80, 220, 255, 0.12);
+  border-right: 2px solid var(--blue);
+  background: linear-gradient(135deg, rgba(47, 123, 255, 0.10), rgba(8, 14, 30, 0.7));
+}
+.msg-assistant, .msg-system { max-width: 95%; }
+.chat-log { scroll-behavior: smooth; }
+
+/* Empty state before the first message */
+.chat-empty {
+  margin: auto 0;
+  text-align: center;
+  padding: 26px 18px;
+  border: 1px dashed rgba(80, 220, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(2, 6, 16, 0.35);
+}
+.chat-empty-icon { font-size: 26px; margin-bottom: 8px; filter: drop-shadow(0 0 12px rgba(0,240,255,0.4)); }
+.chat-empty-title {
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase; color: var(--cyan);
+  margin-bottom: 6px;
+}
+.chat-empty-sub { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.chat-empty-sub code {
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  background: rgba(0, 240, 255, 0.06); padding: 1px 5px; border-radius: 4px;
+}
+
+/* KPI cards: respond to the pointer */
+.risk-card {
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.risk-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 240, 255, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 14px rgba(0, 240, 255, 0.10);
+}
+
+/* Risk table: zebra striping for scan-ability */
+.risk-table tbody tr:nth-child(even) td { background: rgba(0, 240, 255, 0.022); }
+
+/* Word chips: gentle pointer feedback */
+.word-chip { transition: transform 0.12s ease, box-shadow 0.15s ease; }
+.word-chip:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); }
+
+/* Status bar: clearer item separation */
+.sb-item + .sb-item { margin-left: 4px; }
+.sb-item { padding: 2px 8px; border-radius: 6px; }
+.sb-item:hover { background: rgba(0, 240, 255, 0.05); }
+
+/* Typing indicator while the LLM is answering */
+.chat-typing {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.chat-typing i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--cyan);
+  animation: typingBlink 1.2s infinite ease-in-out;
+}
+.chat-typing i:nth-child(2) { animation-delay: 0.18s; }
+.chat-typing i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes typingBlink {
+  0%, 70%, 100% { opacity: 0.25; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-3px); }
+}
