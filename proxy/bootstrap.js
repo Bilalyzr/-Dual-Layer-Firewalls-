@@ -15,6 +15,7 @@ import { hydrateBans } from "./response/banStore.js";
 import { startSiemRelay, siemEnabled } from "./integrations/siem.js";
 import { log } from "./lib/logger.js";
 import { llmConfig, startFallbackWarmer } from "./llm/client.js";
+import { ensureServerPublicIp } from "./middleware/ipContext.js";
 import { strictReal } from "./lib/strict.js";
 
 // Last-resort safety net. The proxy is a security control with no supervisor in
@@ -77,7 +78,10 @@ export async function startService(role = "all") {
         llmConfigured: llmConfig().configured,
         siem: siemEnabled(),
       });
-      if (role === "all" || role === "gateway") startFallbackWarmer();
+      if (role === "all" || role === "gateway") {
+        startFallbackWarmer();
+        ensureServerPublicIp(); // warm the real-IP cache so even the first request displays it
+      }
       resolve(server);
     });
   });

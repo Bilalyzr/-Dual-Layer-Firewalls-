@@ -62,11 +62,15 @@ def analyze(telemetry: Telemetry) -> dict:
         threat["risk_level"] = _score_to_level(threat["risk_score"])
 
     # Layer-1 bridge: a confirmed prompt injection is itself a hostile
-    # behavioral signal — boost the risk and let §35 explain it.
+    # behavioral signal — boost the risk and let §35 explain it. Floor at
+    # HIGH: the firewall already BLOCKED this prompt upstream, so the
+    # behavioral verdict must never under-report it (real-context telemetry
+    # alone can sit in the 60s which would read as mere STEP_UP).
     if telemetry.prompt_injection:
-        threat["risk_score"] = min(100, threat["risk_score"] + 30)
-        from .threat_engine import _score_to_level
+        threat["risk_score"] = max(threat["risk_score"] + 30, 75)
+        from .threat_engine import _score_to_level, _level_to_action
         threat["risk_level"] = _score_to_level(threat["risk_score"])
+        threat["action"] = _level_to_action(threat["risk_level"])
 
     # Generate explainability reasons (PRD §35)
     reasons = _generate_reasons(telemetry, anomaly, baseline, llm_ctx)

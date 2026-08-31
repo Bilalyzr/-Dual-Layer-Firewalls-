@@ -25,6 +25,7 @@ import { forensicsFromReq } from "../middleware/ipContext.js";
 import { requestEnrichment } from "../forensics/enrich.js";
 import { recordOffense } from "../response/banStore.js";
 import { computeFingerprint, checkSignature, recordSignature } from "../firewall/fingerprint.js";
+import { getFingerprintState } from "./fingerprint.js";
 
 const router = Router();
 
@@ -76,31 +77,50 @@ async function fetchWordScores(prompt) {
 // Fire-and-forget from EVERY block path — never adds chat-path latency.
 // `wordScores` (from fetchWordScores) makes the §35 EXPLAINABILITY reasons
 // prompt-specific: the engine quotes the attack vocabulary it contains.
-function reportInjectionBehavior({ userId, sessionId, prompt, wordScores }) {
+//
+// REAL-TIME CONTEXT (trial-update): device/location/time signals are taken
+// from the ACTUAL request — the user's stored fingerprint (changed vs not),
+// the resolved client IP (changed vs not), and the real clock. The old
+// hardcoded hostile context (unknown device, 3am, critical database) made
+// "New device/location detected" fire for everyone, always — fake signals.
+const _lastSeenIp = new Map(); // userId -> last client IP (real location-change source)
+function reportInjectionBehavior({ userId, sessionId, prompt, wordScores, clientIp }) {
+  const uid = String(userId || "anon");
+  const fpState = getFingerprintState(uid); // real: {known, changed}
+  const prevIp = _lastSeenIp.get(uid);
+  const ip = String(clientIp || "");
+  if (ip) _lastSeenIp.set(uid, ip);
+  const locationChange = Boolean(ip && prevIp && prevIp !== ip); // first sighting is NOT a change
+  const now = new Date();
+  const hour = now.getHours();
+  const workingHours = hour >= 9 && hour < 18;
   fetch(`${ENGINE_URL}/behavior/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       // Sanitize: express-session yields null (not "") when absent, and a
       // JSON null fails the engine's Pydantic validation with a 422.
-      user_id: String(userId || "anon"),
+      user_id: uid,
       session_id: String(sessionId || ""),
       role: "user",
-      device_id: "unknown-x7",
-      device_type: "mobile",
-      device_trust: 0.1,
-      registered_device: false,
-      device_change: true,
-      location_change: true,
-      location_frequency: 0.05,
-      hour: 3,
-      working_hours: false,
-      working_day: false,
-      resource_type: "database",
-      resource_sensitivity: "critical",
-      request_frequency: 150,
-      resource_access_frequency: 60,
-      failed_auth_count: 2,
+      // REAL device signals from the fingerprint store
+      device_id: fpState.known ? "registered-device" : "unregistered-device",
+      device_type: "browser",
+      device_trust: fpState.known ? 0.9 : 0.3,
+      registered_device: fpState.known,
+      device_change: fpState.changed,
+      // REAL location signal from the resolved client IP
+      location_change: locationChange,
+      location_frequency: locationChange ? 0.2 : 0.85,
+      // REAL clock
+      hour,
+      working_hours: workingHours,
+      working_day: now.getDay() >= 1 && now.getDay() <= 5,
+      resource_type: "chat",
+      resource_sensitivity: "medium",
+      request_frequency: 12,
+      resource_access_frequency: 5,
+      failed_auth_count: 0,
       prompt_text: prompt,
       prompt_injection: true,
       word_scores: wordScores || {},
@@ -206,7 +226,7 @@ router.post("/", async (req, res) => {
     await recordSignature(fp.signature, { category, label, techniques: fp.techniques });
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
     const heuristicWordScores = await fetchWordScores(prompt);
-    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: heuristicWordScores });
+    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: heuristicWordScores, clientIp: forensics?.clientIp });
     reportRealtimeSample(prompt, 1);
     return res.json({
       blocked: true,
@@ -260,7 +280,7 @@ router.post("/", async (req, res) => {
       await recordSignature(fp.signature, { category, label: sigHit.label, techniques: fp.techniques });
       console.warn(`[firewall] ENFORCE BLOCK [${category}] signature ${fp.signature} (ML short-circuit)`);
       const sigWordScores = await fetchWordScores(prompt);
-      reportInjectionBehavior({ userId, sessionId, prompt, wordScores: sigWordScores });
+      reportInjectionBehavior({ userId, sessionId, prompt, wordScores: sigWordScores, clientIp: forensics?.clientIp });
       return res.json({
         blocked: true,
         reason: "blocked by AI firewall",
@@ -375,7 +395,7 @@ router.post("/", async (req, res) => {
     // Fetched once, shared by the behavior event (prompt-specific §35
     // explainability) and the blocked response (dashboard word chips).
     var mlWordScores = willBlock ? await fetchWordScores(prompt) : null;
-    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: mlWordScores });
+    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: mlWordScores, clientIp: forensics?.clientIp });
     reportRealtimeSample(prompt, 1);
 
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });

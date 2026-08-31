@@ -49,4 +49,16 @@ router.get("/:userId", (req, res) => {
   res.json(fp || { stored: false });
 });
 
+/** Real device-trust state for behavioral context (trial-update: real-time).
+ * known  — we have a stored fingerprint for this user
+ * changed — the fingerprint CHANGED since the previous request (real signal,
+ *           not a hardcoded hostile context) */
+export function getFingerprintState(userId) {
+  const fp = _fingerprints.get(userId);
+  return {
+    known: Boolean(fp?.combined),
+    changed: Boolean(fp?.prev && fp.prev !== fp.combined),
+  };
+}
+
 export default router;

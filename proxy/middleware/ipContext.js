@@ -89,6 +89,34 @@ function firstIp(req, name) {
   return headerList(req, name)[0] || "";
 }
 
+// Server-side public-IP resolution for the local-dev demo path: when the
+// browser didn't send its self-reported header (internal calls, curl, SSE),
+// the machine's REAL public IP is resolved once in the background and cached.
+// Without this, loopback requests displayed ::1 / 127.0.0.1 in the feed.
+let _serverPublicIp = null;
+let _serverIpFetching = false;
+const SERVER_IP_PROVIDERS = [
+  "https://api.ipify.org",
+  "https://icanhazip.com",
+  "https://ifconfig.me/ip",
+];
+export function ensureServerPublicIp() {
+  if (_serverPublicIp || _serverIpFetching) return;
+  _serverIpFetching = true;
+  (async () => {
+    for (const url of SERVER_IP_PROVIDERS) {
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        const m = (await r.text()).match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/);
+        if (m) { _serverPublicIp = m[0]; break; }
+      } catch { /* next provider */ }
+    }
+    _serverIpFetching = false;
+    // Re-check periodically — the network IP can change on reconnect.
+    setTimeout(() => { _serverPublicIp = null; ensureServerPublicIp(); }, 10 * 60_000);
+  })();
+}
+
 /**
  * Resolve the client IP for a request without mutating it (pure — reused by the
  * edge ipGuard in Epic C, which must know the client before the pipeline runs).
@@ -109,13 +137,15 @@ export function resolveIpContext(req) {
   const demoHeader = demoClientIpHeader();
   if (demoHeader && peer && ipInAnyCidr(peer, LOOPBACK)) {
     const demoIp = firstIp(req, demoHeader);
-    if (demoIp) {
+    const resolved = demoIp || (ensureServerPublicIp(), _serverPublicIp) || "";
+    if (resolved) {
       return {
-        clientIp: demoIp,
+        clientIp: resolved,
         realIp: peer,
-        proxyChain: [demoIp, peer],
+        proxyChain: [resolved, peer],
         peerTrusted: true,
         spoofed: false,
+        serverResolved: !demoIp,
       };
     }
   }
