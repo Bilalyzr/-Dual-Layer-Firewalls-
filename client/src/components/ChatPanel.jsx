@@ -150,11 +150,6 @@ export default function ChatPanel({ userId }) {
           <div className="chat-empty">
             <div className="chat-empty-icon">🛡️</div>
             <div className="chat-empty-title">Firewall chat ready</div>
-            <div className="chat-empty-sub">
-              Send a prompt to test the 7-layer pipeline — or try an attack
-              like <code>“ignore all previous instructions”</code> and watch it
-              get blocked with full evidence.
-            </div>
           </div>
         )}
         {messages.map((m, i) => (
