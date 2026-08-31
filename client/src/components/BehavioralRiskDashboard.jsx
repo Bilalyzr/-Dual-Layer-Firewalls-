@@ -26,12 +26,25 @@ export default function BehavioralRiskDashboard({ userId }) {
 
   const latest = behavior[0] || null;
 
-  // Track risk score over time for the chart (last 30 events)
+  // Track risk score over time (last 30 events). Tracks the EVENT identity —
+  // not the score value — so two consecutive attacks with the same score both
+  // land as points (the old value-dep silently dropped them). Injection
+  // blocks are flagged so the line can color them red vs benign green.
   useEffect(() => {
-    if (latest?.risk_score != null) {
-      setRiskHistory((prev) => [...prev, { score: latest.risk_score, level: latest.risk_level, ts: Date.now() }].slice(-30));
-    }
-  }, [latest?.risk_score]);
+    if (!latest || latest.risk_score == null) return;
+    const ts = latest.ts ? new Date(latest.ts).getTime() : Date.now();
+    const blocked = latest.decision === "RESTRICT" || latest.decision === "DENY";
+    const injection = (latest.reasons || []).some((r) => String(r).includes("Prompt injection"));
+    setRiskHistory((prev) => {
+      if (prev.length && prev[prev.length - 1].ts === ts) return prev; // dedupe replayed events
+      return [...prev, {
+        score: Math.round(latest.risk_score),
+        level: latest.risk_level,
+        ts,
+        blocked: blocked || injection,
+      }].slice(-30);
+    });
+  }, [latest]);
 
   // §25 — Command Center aggregates: poll /api/behavior/stats every 5s (and on new events).
   useEffect(() => {
@@ -74,10 +87,15 @@ export default function BehavioralRiskDashboard({ userId }) {
     { label: "Session Risk", value: level, color: color },
   ];
 
-  // Chart: render the risk history as a simple SVG sparkline
+  // Chart: risk history as an area sparkline — the line is the risk score,
+  // points are colored by verdict (red = injection block, green = allowed).
   const chartPoints = riskHistory.length > 1
     ? riskHistory.map((p, i) => `${(i / (riskHistory.length - 1)) * 100},${100 - p.score}`).join(" ")
     : "";
+  const areaPoints = chartPoints
+    ? `0,100 ${chartPoints} 100,100`
+    : "";
+  const lastPoint = riskHistory[riskHistory.length - 1];
 
   return (
     <section className="panel">
@@ -155,14 +173,40 @@ export default function BehavioralRiskDashboard({ userId }) {
         ))}
       </div>
 
-      {/* §36 — Risk Score Chart (sparkline) */}
+      {/* §36 — Risk Score Chart (live sparkline; every prompt = one point) */}
       {riskHistory.length > 1 && (
         <div className="behavioral-chart">
-          <div className="muted small" style={{ marginBottom: 4 }}>RISK SCORE TREND</div>
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 50 }}>
-            <polyline points={chartPoints} fill="none" stroke={color} strokeWidth="1.5" />
+          <div className="muted small" style={{ marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+            <span>RISK SCORE TREND</span>
+            <span>
+              {riskHistory.length} events ·{" "}
+              <span style={{ color: "var(--red)" }}>
+                {riskHistory.filter((p) => p.blocked).length} blocked
+              </span>
+              {" "}· last {lastPoint ? Math.max(0, Math.round((Date.now() - lastPoint.ts) / 1000)) : 0}s ago
+            </span>
+          </div>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 56 }}>
+            <defs>
+              <linearGradient id="riskArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(0,240,255,0.35)" />
+                <stop offset="100%" stopColor="rgba(0,240,255,0.02)" />
+              </linearGradient>
+            </defs>
+            {/* threshold guide at the block line (80/100) */}
+            <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(255,56,96,0.35)" strokeWidth="0.4" strokeDasharray="2 2" />
+            {areaPoints && <polygon points={areaPoints} fill="url(#riskArea)" />}
+            <polyline points={chartPoints} fill="none" stroke="var(--cyan)" strokeWidth="1.4" />
             {riskHistory.map((p, i) => (
-              <circle key={i} cx={(i / (riskHistory.length - 1)) * 100} cy={100 - p.score} r="0.8" fill={riskColor(p.level)} />
+              <circle
+                key={i}
+                cx={(i / (riskHistory.length - 1)) * 100}
+                cy={100 - p.score}
+                r={p.blocked ? 1.6 : 1.0}
+                fill={p.blocked ? "var(--red)" : "var(--green)"}
+                stroke={p.blocked ? "rgba(255,56,96,0.5)" : "none"}
+                strokeWidth="0.5"
+              />
             ))}
           </svg>
         </div>

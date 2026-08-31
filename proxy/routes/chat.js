@@ -514,6 +514,22 @@ router.post("/", async (req, res) => {
     });
   }
 
+  // Real-time accuracy: every ALLOWED prompt also lands on the behavioral
+  // stream with its REAL classifier probability — so the dashboard's RISK
+  // SCORE TREND shows green low points for benign traffic and red spikes
+  // when an injection is blocked (the full picture, live).
+  if (!outboundBlocked) {
+    const p = Number.isFinite(threatProb) ? threatProb : 0;
+    publish("behavior", {
+      user_id: userId,
+      risk_score: Math.round(p * 100),
+      risk_level: p < 0.35 ? "LOW" : p < 0.7 ? "MEDIUM" : "HIGH",
+      decision: "ALLOW",
+      reasons: [`Prompt allowed — classifier probability ${(p * 100).toFixed(0)}% below threshold`],
+      ts: new Date().toISOString(),
+    });
+  }
+
   return res.json({
     blocked: false,
     answer: finalContent,
