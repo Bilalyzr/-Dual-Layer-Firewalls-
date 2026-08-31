@@ -94,10 +94,32 @@ def analyze(telemetry: Telemetry) -> dict:
 
 
 def _generate_reasons(telemetry: Telemetry, anomaly: dict, baseline, llm_ctx: dict) -> list[str]:
-    """Explainability — why is this behavior flagged? (PRD §35)"""
+    """Explainability — why is this behavior flagged? (PRD §35)
+
+    Injection reasons are PROMPT-SPECIFIC: they quote the offending prompt
+    and the exact attack vocabulary with weights, so the dashboard's
+    EXPLAINABILITY block explains the prompt itself, not just context.
+    """
     reasons = []
     if telemetry.prompt_injection:
-        reasons.append("Prompt injection detected in user input (Layer-1 firewall)")
+        snippet = (telemetry.prompt_text or "").strip()
+        if snippet:
+            shown = snippet[:70] + ("…" if len(snippet) > 70 else "")
+            reasons.append(f'Prompt injection detected: "{shown}"')
+        else:
+            reasons.append("Prompt injection detected in user input (Layer-1 firewall)")
+        neg = (telemetry.word_scores or {}).get("negative_terms") or []
+        if neg:
+            top = sorted(neg, key=lambda t: -float(t.get("weight", 0)))[:4]
+            terms = ", ".join(f"{t.get('term')} ({float(t.get('weight', 0)):.2f})" for t in top)
+            reasons.append(f"Attack vocabulary in prompt: {terms}")
+        w = (telemetry.word_scores or {}).get("weightage")
+        if w is not None:
+            reasons.append(f"Word-injection weightage: {float(w) * 100:.0f}%")
+        pos = (telemetry.word_scores or {}).get("positive_terms") or []
+        if pos:
+            terms = ", ".join(str(t.get("term")) for t in pos[:3])
+            reasons.append(f"Benign-context terms present (dampeners): {terms}")
     if telemetry.device_change:
         reasons.append("New device detected")
     if telemetry.location_change:

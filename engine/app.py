@@ -377,6 +377,9 @@ class BehaviorRequest(BaseModel):
     resource_access_frequency: float = 5.0
     prompt_text: str = ""
     prompt_injection: bool = False  # Layer-1 flagged this prompt as an injection
+    # v2 firewall word-injection breakdown — powers the prompt-specific
+    # §35 EXPLAINABILITY reasons (attack vocabulary with weights).
+    word_scores: dict = {}
     failed_auth_attempt: bool = False  # signal a failed authentication for escalation
 
 

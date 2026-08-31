@@ -53,6 +53,10 @@ class Telemetry:
     # prompt as an injection attempt (drives the §35 explainability reason
     # and a risk boost — the injection IS the behavioral signal).
     prompt_injection: bool = False
+    # Word-injection breakdown from the v2 firewall's sentiment engine
+    # ({negative_terms: [{term, weight}], positive_terms: [...], weightage})
+    # so §35 EXPLAINABILITY can quote the exact attack vocabulary found.
+    word_scores: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.timestamp:

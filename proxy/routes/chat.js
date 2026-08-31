@@ -74,7 +74,9 @@ async function fetchWordScores(prompt) {
 // every triggered warning (new device/location, off-hours, sensitive
 // resource, frequency above baseline, prior failed auths, anomaly score).
 // Fire-and-forget from EVERY block path — never adds chat-path latency.
-function reportInjectionBehavior({ userId, sessionId, prompt }) {
+// `wordScores` (from fetchWordScores) makes the §35 EXPLAINABILITY reasons
+// prompt-specific: the engine quotes the attack vocabulary it contains.
+function reportInjectionBehavior({ userId, sessionId, prompt, wordScores }) {
   fetch(`${ENGINE_URL}/behavior/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,6 +103,7 @@ function reportInjectionBehavior({ userId, sessionId, prompt }) {
       failed_auth_count: 2,
       prompt_text: prompt,
       prompt_injection: true,
+      word_scores: wordScores || {},
     }),
     signal: AbortSignal.timeout(5000),
   })
@@ -202,7 +205,8 @@ router.post("/", async (req, res) => {
     // Epic D: teach the signature cache so this attack shape is caught pre-ML next time.
     await recordSignature(fp.signature, { category, label, techniques: fp.techniques });
     console.warn(`[firewall] ENFORCE BLOCK [${category}] ${label} (heuristic short-circuit)`);
-    reportInjectionBehavior({ userId, sessionId, prompt });
+    const heuristicWordScores = await fetchWordScores(prompt);
+    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: heuristicWordScores });
     reportRealtimeSample(prompt, 1);
     return res.json({
       blocked: true,
@@ -210,7 +214,7 @@ router.post("/", async (req, res) => {
       category,
       categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
       blockReason: label,
-      wordScores: await fetchWordScores(prompt),
+      wordScores: heuristicWordScores,
       verdict: {
         mode: MODE,
         threshold: THRESHOLD,
@@ -255,14 +259,15 @@ router.post("/", async (req, res) => {
       if (forensics?.clientIp) await recordOffense(forensics.clientIp);
       await recordSignature(fp.signature, { category, label: sigHit.label, techniques: fp.techniques });
       console.warn(`[firewall] ENFORCE BLOCK [${category}] signature ${fp.signature} (ML short-circuit)`);
-      reportInjectionBehavior({ userId, sessionId, prompt });
+      const sigWordScores = await fetchWordScores(prompt);
+      reportInjectionBehavior({ userId, sessionId, prompt, wordScores: sigWordScores });
       return res.json({
         blocked: true,
         reason: "blocked by AI firewall",
         category,
         categoryTitle: OWASP_TITLES[category] || "Prompt Injection",
         blockReason: label,
-        wordScores: await fetchWordScores(prompt),
+        wordScores: sigWordScores,
         verdict: {
           mode: MODE,
           threshold: THRESHOLD,
@@ -367,7 +372,10 @@ router.post("/", async (req, res) => {
     const stored = await insertAlert(alert);
     publish("threat", alert);
 
-    reportInjectionBehavior({ userId, sessionId, prompt });
+    // Fetched once, shared by the behavior event (prompt-specific §35
+    // explainability) and the blocked response (dashboard word chips).
+    var mlWordScores = willBlock ? await fetchWordScores(prompt) : null;
+    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: mlWordScores });
     reportRealtimeSample(prompt, 1);
 
     if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
@@ -397,7 +405,7 @@ router.post("/", async (req, res) => {
       // `label` only exists on the engine-ready alert path; fall back for the
       // degraded (engine down) path where only the classifier verdict exists.
       blockReason: (typeof label === "string" && label) || `ML classifier score ${threatProb?.toFixed?.(2) ?? "?"} ≥ threshold`,
-      wordScores: await fetchWordScores(prompt),
+      wordScores: (typeof mlWordScores !== "undefined" && mlWordScores) || await fetchWordScores(prompt),
       verdict,
       latencyMs: +(performance.now() - t0).toFixed(2),
     });
