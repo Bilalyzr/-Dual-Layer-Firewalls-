@@ -109,16 +109,12 @@ export default function App() {
         <div className="col col-left">
           <ChatPanel userId={userId} />
           <ThreatFeed />
+          <RiskTable />
         </div>
         <div className="col col-right">
           <BehavioralRiskDashboard userId={userId} />
           <MetricsPanel />
           <SlaPanel />
-        </div>
-
-        {/* Row 3 — wide session risk table (full width) */}
-        <div className="row-full">
-          <RiskTable />
         </div>
       </main>
 
