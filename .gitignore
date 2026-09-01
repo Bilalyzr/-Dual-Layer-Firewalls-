@@ -34,3 +34,7 @@ data/
 
 # realtime-learning runtime artifacts
 models/threat_model.prev.json
+
+# blue-green local state + secrets
+deploy/bluegreen/app.env
+.deploy-active

@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 COPY requirements-security.txt ./
+# CPU-only torch FIRST from the PyTorch CPU index — the PyPI wheel drags
+# multi-GB CUDA dependencies into a CPU-only image.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements-security.txt
 
 # Service code (api/ core/ guardrails/ services/ models/ train/) + dataset

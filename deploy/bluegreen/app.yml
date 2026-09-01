@@ -1,0 +1,64 @@
+# Blue-green application stack — ONE COLOR of the pair.
+# Started by scripts/deploy-bluegreen.sh as project dlf-blue or dlf-green.
+#
+# Zero-downtime contract:
+#   * NO host ports — only the edge nginx (deploy/bluegreen/edge.yml) is public.
+#   * Joins the external data network (redis/postgres/qdrant already run there
+#     under the dual-layer-firewall compose project) so both colors share the
+#     same stores — switching color never swaps data.
+#   * Fixed container_name so the edge upstream can target the active color.
+#
+#   docker compose -p dlf-$COLOR -f deploy/bluegreen/app.yml up -d --build
+name: dlf-app
+
+services:
+  engine:
+    build: ../../engine
+    container_name: dlf-${COLOR}-engine
+    environment:
+      SERVICE_ROLE: all
+      PORT: 8011
+      REDIS_URL: redis://redis:6379/0
+    networks: [edge, data]
+    restart: unless-stopped
+
+  proxy:
+    build: ../../proxy
+    container_name: dlf-${COLOR}-proxy
+    environment:
+      SERVICE_ROLE: all
+      PORT: 4001
+      ENGINE_URL: http://dlf-${COLOR}-engine:8011
+      REALTIME_API_URL: http://dlf-${COLOR}-firewall:8020
+      FIREWALL_MODE: enforce
+      # LLM keys live in deploy/bluegreen/app.env (never committed) — copy
+      # them from .env.local. Without a key, STRICT_REAL=false lets the
+      # offline/fallback responder keep chat usable.
+      STRICT_REAL: "false"
+    env_file:
+      - ${ENV_FILE:-app.env}   # created empty by the deploy script
+    depends_on: [engine]
+    networks: [edge, data]
+    restart: unless-stopped
+
+  firewall:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.firewall
+    container_name: dlf-${COLOR}-firewall
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      AUDIT_DSN: ${AUDIT_DSN:-}
+    env_file:
+      - ${ENV_FILE:-app.env}
+    networks: [edge, data]
+    restart: unless-stopped
+
+networks:
+  edge:
+    name: dlf-edge
+    external: true   # created once by the deploy script; shared by both colors + edge
+  data:
+    name: dual-layer-firewall_default
+    external: true

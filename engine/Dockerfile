@@ -10,8 +10,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy engine source.
-COPY . .
+# Copy engine source as the `engine` package (WORKDIR /app is the package
+# root) so `python -m engine.classifier.train` and `uvicorn engine.app:app`
+# resolve exactly as they do from the repo root on a dev machine.
+COPY . ./engine
 
 # Train both models at build time so artifacts are baked into the image:
 #   - the semantic jailbreak classifier (Tier 1)

@@ -1,0 +1,62 @@
+> # Zero-downtime deploy pipeline — runs AFTER the CI suite is green.
+name: Deploy (blue-green)
+
+on:
+  # Auto-deploy when the full CI suite succeeds on main.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Manual trigger from the Actions tab.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false  # never kill a deploy mid-switch
+
+jobs:
+  validate:
+    name: Validate deploy configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose config sanity (app + edge)
+        run: |
+          COLOR=blue ENV_FILE=/dev/null docker compose -p dlf-check \
+            -f deploy/bluegreen/app.yml config -q
+          docker compose -f deploy/bluegreen/edge.yml config -q
+      - name: Deploy script syntax
+        run: bash -n scripts/deploy-bluegreen.sh
+
+  deploy:
+    name: Blue-green switch (zero downtime)
+    runs-on: ubuntu-latest
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Skip when no deploy target is configured
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "::notice::No DEPLOY_HOST secret — skipping remote deploy."
+            echo "::notice::Wire it up: repo Settings → Secrets → DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY,"
+            echo "::notice::then on the server: git clone && scripts/deploy-bluegreen.sh (first run bootstraps blue)."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      - name: Deploy over SSH (build new color → health gate → graceful switch)
+        if: env.SKIP != '1'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH || '.' }}
+            git pull --ff-only
+            bash scripts/deploy-bluegreen.sh
+      - name: Deploy summary
+        if: env.SKIP != '1'
+        run: echo "✓ New color deployed behind the edge — old color kept serving until the switch."

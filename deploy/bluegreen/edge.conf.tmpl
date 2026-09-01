@@ -1,0 +1,28 @@
+# Managed by scripts/deploy-bluegreen.sh — DO NOT EDIT BY HAND.
+# Active color: blue
+server {
+  listen 80;
+
+  # Site API → active proxy color
+  location /api/ {
+    proxy_pass http://dlf-blue-proxy:4001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 120s;
+  }
+
+  # v2 firewall API → active firewall color
+  location /v2/ {
+    rewrite ^/v2/(.*)$ /$1 break;
+    proxy_pass http://dlf-blue-firewall:8020;
+    proxy_set_header Host $host;
+    proxy_read_timeout 120s;
+  }
+
+  # Health probe for the deploy script + monitoring
+  location /edge-health {
+    access_log off;
+    return 200 "edge-ok color=blue\n";
+  }
+}

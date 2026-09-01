@@ -1,16 +1,21 @@
 # Architecture v2 — GenAI Security Firewall Proxy (7-layer pipeline)
 # Install: pip install -r requirements-security.txt
+#
+# Pins mirror the tested .venv (st 3.4 / transformers 4.x) and keep the
+# Docker image CPU-only — unpinned torch drags multi-GB CUDA wheels into a
+# build that doesn't have (or need) a GPU.
 fastapi>=0.115
 uvicorn[standard]>=0.34
 pydantic>=2.10
 httpx>=0.28
-numpy>=1.26
+numpy>=1.26,<3
 pandas>=2.2
-scikit-learn>=1.6
+scikit-learn>=1.6,<2
 joblib>=1.4
-# L2 semantic intent guardrail (PDF §2.3)
-sentence-transformers>=3.0
-xgboost>=2.1
+# L2 semantic intent guardrail (PDF §2.3) — st 3.x/transformers 4.x = tested
+sentence-transformers>=3.4,<4
+transformers>=4.51,<5
+xgboost>=2.1,<3
 # L3 state store / rate limiting
 redis>=5.0
 # L4 RAG store (embedded :memory: mode when QDRANT_URL is unset)

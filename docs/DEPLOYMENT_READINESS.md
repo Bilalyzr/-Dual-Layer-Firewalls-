@@ -41,3 +41,31 @@ Render web service (Docker, Dockerfile.firewall)
 ```
 
 CI already gates every push; a manual smoke (`scripts/trial_demo.py` + `scripts/redteam_custom.py`) should run once against the deployed URL before the trial.
+
+---
+
+## Zero-Downtime Deployment (blue-green) — how the site never crashes during updates
+
+**The rule:** the running version keeps serving until the new version is built, booted, and health-checked. Traffic switches with a graceful nginx reload; only then does the old version stop.
+
+```
+scripts/deploy-bluegreen.sh          # deploy inactive color + switch
+scripts/deploy-bluegreen.sh --status # show colors + health
+```
+
+Flow of every deploy:
+
+1. Active color (say **blue**) keeps serving at the edge (`:8090`) the whole time.
+2. **Green** is built and booted *beside* it (no shared ports — only the edge is public).
+3. Health gate: engine `/health`, firewall `/health`, proxy `/api/alerts/status` must ALL pass. **A failed deploy aborts and blue keeps serving — the site never goes down.**
+4. Edge nginx upstream flips to green + `nginx -s reload` (graceful — in-flight requests finish on blue).
+5. Blue drains and stops. `.deploy-active` records green.
+
+CI/CD (`.github/workflows/deploy.yml`): after the CI suite is green on `main`, the deploy job validates the compose configs and runs the same script on the server over SSH (configure `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PATH` secrets). Without the secrets it skips with instructions instead of failing — CI stays green on any machine.
+
+**First-time bootstrap on a server:**
+```bash
+git clone <repo> && cd dual-layer-firewall
+docker compose --profile security up -d redis postgres qdrant   # shared data stores
+echo green > .deploy-active && bash scripts/deploy-bluegreen.sh # bootstraps blue + edge
+```

@@ -1,0 +1,19 @@
+# The public edge — the ONLY component with host ports. Runs continuously;
+# the deploy script rewrites its upstream to the healthy color and reloads
+# nginx gracefully (in-flight requests complete on the old color).
+#
+#   docker compose -f deploy/bluegreen/edge.yml up -d
+name: dlf-edge
+services:
+  edge:
+    image: nginx:1.27-alpine
+    container_name: dlf-edge
+    ports: ["8090:80"]
+    volumes:
+      - ./edge.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [dlf-edge]
+    restart: unless-stopped
+networks:
+  dlf-edge:
+    name: dlf-edge
+    external: true
