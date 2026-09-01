@@ -12,7 +12,14 @@ server {
     proxy_read_timeout 120s;
   }
 
-  # v2 firewall API → active firewall color
+  # v2 firewall API under /v2/ — the firewall's chat endpoint lives at
+  # /v1/chat/completions, everything else at its bare path (/health,
+  # /sentiment/score, /metrics…).
+  location = /v2/chat/completions {
+    proxy_pass http://dlf-blue-firewall:8020/v1/chat/completions;
+    proxy_set_header Host $host;
+    proxy_read_timeout 120s;
+  }
   location /v2/ {
     rewrite ^/v2/(.*)$ /$1 break;
     proxy_pass http://dlf-blue-firewall:8020;
