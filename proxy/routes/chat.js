@@ -365,7 +365,63 @@ router.post("/", async (req, res) => {
   reportRealtimeSample(prompt, 0, threatProb);
 
   // ---- Decision: shadow logs but does not block. ----
-  const willBlock = isThreat && MODE === "enforce";
+  let willBlock = isThreat && MODE === "enforce";
+  let weightageBlock = null;
+
+  // Word-injection corroboration (mirrors the v2 firewall's decision rule):
+  // a classifier score in the gray zone PLUS saturated attack vocabulary is
+  // an attack — paraphrases like "ignoring all previous instructions" score
+  // below the ML threshold while carrying unmistakable attack words.
+  // Probe only the gray zone so clean prompts never pay the round-trip.
+  if (!willBlock && MODE === "enforce" && threatProb >= 0.25) {
+    const ws = await fetchWordScores(prompt);
+    if (ws && typeof ws.weightage === "number" && ws.weightage >= 0.9) {
+      willBlock = true;
+      weightageBlock = {
+        ws,
+        category: "LLM01",
+        label: `Word-injection weightage ${Math.round(ws.weightage * 100)}% (attack vocabulary saturation)`,
+      };
+    }
+  }
+  if (weightageBlock && !isThreat) {
+    // Route through the same block bookkeeping as an ML hit.
+    const alert = {
+      userId,
+      sessionId,
+      kind: "weightage",
+      category: weightageBlock.category,
+      categoryTitle: OWASP_TITLES[weightageBlock.category] || "Prompt Injection",
+      label: weightageBlock.label,
+      prompt: mask(prompt),
+      threatProbability: threatProb,
+      mode: MODE,
+      blocked: true,
+      forensics,
+      ts: new Date(),
+    };
+    const stored = await insertAlert(alert);
+    publish("threat", alert);
+    if (forensics) requestEnrichment({ alertId: stored.alertId, ip: forensics.clientIp });
+    if (forensics?.clientIp) await recordOffense(forensics.clientIp);
+    console.warn(`[firewall] ENFORCE BLOCK [${weightageBlock.category}] ${weightageBlock.label}`);
+    reportInjectionBehavior({ userId, sessionId, prompt, wordScores: weightageBlock.ws, clientIp: forensics?.clientIp });
+    return res.json({
+      blocked: true,
+      reason: "blocked by AI firewall",
+      category: weightageBlock.category,
+      categoryTitle: OWASP_TITLES[weightageBlock.category] || "Prompt Injection",
+      blockReason: weightageBlock.label,
+      wordScores: weightageBlock.ws,
+      verdict: {
+        ...verdict,
+        weightage: { weightage: weightageBlock.ws.weightage, blocked: true },
+        threat: true,
+        category: weightageBlock.category,
+      },
+      latencyMs: +(performance.now() - t0).toFixed(2),
+    });
+  }
 
   if (isThreat) {
     const guardLabel = guardInput.degraded

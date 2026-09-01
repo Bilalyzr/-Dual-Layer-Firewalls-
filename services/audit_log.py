@@ -509,14 +509,22 @@ def record_training_samples_batch(samples: list[dict]) -> dict[str, int]:
         if _BACKEND == "unset":
             init()
         if _BACKEND == "postgres" and _PG is not None:
-            from psycopg.extras import execute_values  # type: ignore
+            from datetime import datetime, timezone
 
-            execute_values(
-                _PG,
-                "INSERT INTO training_samples (ts, text_hash, text, label, source, scores)"
-                " VALUES %s ON CONFLICT (text_hash) DO NOTHING",
-                rows, page_size=500)
-            out["recorded"] = len(rows)
+            # PG's ts column is TIMESTAMPTZ — a raw float epoch is rejected
+            # (pre-PG this fed SQLite's REAL column). Also note: psycopg2's
+            # `execute_values` does not exist in psycopg 3 — executemany is
+            # pipelined and fast there.
+            pg_rows = [(datetime.fromtimestamp(r[0], tz=timezone.utc), *r[1:])
+                       for r in rows]
+            with _PG.cursor() as _cur:
+                _cur.executemany(
+                    "INSERT INTO training_samples"
+                    " (ts, text_hash, text, label, source, scores)"
+                    " VALUES (%s,%s,%s,%s,%s,%s)"
+                    " ON CONFLICT (text_hash) DO NOTHING",
+                    pg_rows)
+            out["recorded"] = len(pg_rows)
             return out
         if _BACKEND == "sqlite" and _SQLITE is not None:
             cur = _SQLITE.executemany(
@@ -526,18 +534,21 @@ def record_training_samples_batch(samples: list[dict]) -> dict[str, int]:
             out["recorded"] = int(cur.rowcount or 0)
             out["duplicates"] += len(rows) - out["recorded"]
             return out
+        # No persistent backend: bulk imports FAIL LOUDLY — a silent memory
+        # fallback reads as success but loses the whole batch on restart.
+        raise RuntimeError(f"audit backend '{_BACKEND}' cannot store a bulk import")
     except Exception:
-        pass
-    # memory fallback
-    for r in rows:
-        if r[1] in _MEM_TRAIN:
-            out["duplicates"] += 1
-        else:
-            _MEM_TRAIN[r[1]] = {"ts": r[0], "text_hash": r[1], "text": r[2],
-                                "label": r[3], "source": r[4],
-                                "scores": json.loads(r[5]), "trained": 0}
-            out["recorded"] += 1
-    return out
+        if _BACKEND == "memory":
+            for r in rows:
+                if r[1] in _MEM_TRAIN:
+                    out["duplicates"] += 1
+                else:
+                    _MEM_TRAIN[r[1]] = {"ts": r[0], "text_hash": r[1], "text": r[2],
+                                        "label": r[3], "source": r[4],
+                                        "scores": json.loads(r[5]), "trained": 0}
+                    out["recorded"] += 1
+            return out
+        raise
 
 
 def list_training_samples(label: int | None = None, limit: int = 5000) -> list[dict[str, Any]]:

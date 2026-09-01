@@ -109,9 +109,61 @@ def fetch_advbench(client: httpx.Client, limit: int):
                 return
 
 
+def fetch_ultrachat_benign(client: httpx.Client, limit: int):
+    """Real-world BENIGN user prompts (trial-update: class rebalance).
+
+    HuggingFaceH4/ultrachat_200k — genuine chat prompts written by real
+    users; take the FIRST human turn of each conversation. These are the
+    ordinary questions/requests the firewall must never block, so the
+    benign class stops being starved (was 889 threat / 441 benign).
+    """
+    got = 0
+    for split in ("train_sft",):
+        offset = 0
+        while got < limit:
+            data = None
+            for attempt in range(3):
+                try:
+                    r = client.get(HF_ROWS, params={
+                        "dataset": "HuggingFaceH4/ultrachat_200k",
+                        "config": "default", "split": split,
+                        "offset": offset, "length": 100,
+                    })
+                    if r.status_code >= 500:
+                        raise httpx.HTTPStatusError("server 5xx", request=r.request, response=r)
+                    r.raise_for_status()
+                    data = r.json()
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(2 * (attempt + 1))
+            rows = data.get("rows", [])
+            if not rows:
+                break
+            for item in rows:
+                row = item.get("row", {})
+                messages = row.get("messages") or []
+                # first human turn of the conversation = the user's prompt
+                first = next((m.get("content", "") for m in messages
+                              if m.get("from") == "human"
+                              or m.get("role") == "user"), "")
+                text = _norm(first)
+                # keep prompt-shaped rows (not tiny greetings / huge dumps)
+                if 25 <= len(text) <= 600:
+                    yield text, 0
+                    got += 1
+                    if got >= limit:
+                        return
+            offset += len(rows)
+            if offset >= int(data.get("num_rows_total", 1_000_000)):
+                break
+
+
 SOURCES = {
     "deepset": fetch_deepset,
     "advbench": fetch_advbench,
+    "ultrachat": fetch_ultrachat_benign,
 }
 
 

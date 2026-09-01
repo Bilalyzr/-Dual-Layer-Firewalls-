@@ -67,7 +67,7 @@ def main() -> int:
     print("=" * 78)
     print("CUSTOM ATTACK BATTERY (novel prompts, not in any dataset)")
     print("=" * 78)
-    with httpx.Client(timeout=60) as c:
+    with httpx.Client(timeout=150) as c:
         for p in ATTACKS:
             sb, sp = site_blocked(c, p)
             vb, vp = v2_blocked(c, p)

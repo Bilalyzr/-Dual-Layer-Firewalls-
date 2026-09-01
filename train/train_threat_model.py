@@ -337,6 +337,32 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         booster = xgb.train(params, xgb.DMatrix(X, label=y),
                             num_boost_round=200, verbose_eval=False)
 
+    # PROMOTION GATE (champion–challenger): a retrain goes live only when its
+    # holdout accuracy is not meaningfully worse than the deployed model's
+    # last recorded accuracy. A bad retrain (noisy batch, poisoned labels) is
+    # DISCARDED here — the live model stays, no rollback ever needed.
+    new_acc = metrics.get("accuracy")
+    prev_acc = None
+    try:
+        from services.audit_log import latest_model_version
+
+        prev_metrics = (latest_model_version() or {}).get("metrics") or {}
+        prev_acc = prev_metrics.get("accuracy")
+    except Exception:
+        prev_acc = None
+    if prev_acc is not None and new_acc is not None and \
+            float(new_acc) < float(prev_acc) - 0.01:
+        print(f"[retrain-realtime] PROMOTION REJECTED — challenger "
+              f"{float(new_acc):.4f} < champion {float(prev_acc):.4f} − 0.01; "
+              "keeping the live model")
+        return {
+            "status": "rejected",
+            "reason": "challenger below champion threshold",
+            "challenger_accuracy": new_acc,
+            "champion_accuracy": prev_acc,
+            "samples": int(len(texts)),
+        }
+
     # Backup the live artifact, then hot-swap.
     SETTINGS.threat_model_path.parent.mkdir(parents=True, exist_ok=True)
     if SETTINGS.threat_model_path.exists():
@@ -368,6 +394,12 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         samples=int(len(texts)), threat=n_threat, benign=n_benign, metrics=metrics,
     )
     print(f"[retrain-realtime] v{version} saved -> {SETTINGS.threat_model_path.name}")
+
+    # FAST-TIER live retrain (trial-update): the TF-IDF ensemble (the cascade's
+    # first line) trains on the SAME live samples, so novel patterns the deep
+    # tier learned reach the millisecond screen too. Fail-soft: a fast-tier
+    # failure never blocks the (already deployed) deep-tier retrain.
+    fast = _retrain_fast_tier(texts, y)
     return {
         "status": "retrained",
         "version": version,
@@ -376,8 +408,40 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         "benign": n_benign,
         "bootstrap_seed": bootstrap_seed,
         "metrics": metrics,
+        "fast_tier": fast,
         "model_reloaded": input_filter.status().get("ready", False),
     }
+
+
+def _retrain_fast_tier(texts: list[str], y) -> dict:
+    """Retrain the shared TF-IDF ensemble (engine/models/*.joblib) on live data.
+
+    Mirrors engine/classifier/ensemble.py estimators; both loaders
+    (firewall cascade + engine /classify) hot-reload on file mtime.
+    """
+    try:
+        import joblib
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        from engine.classifier.ensemble import MODEL_DIR, build_estimators
+
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        vec = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True,
+                              strip_accents="unicode", min_df=1)
+        Xf = vec.fit_transform(texts)
+        ests = build_estimators()
+        for est in ests.values():
+            est.fit(Xf, y)
+        joblib.dump(vec, MODEL_DIR / "tfidf.joblib")
+        joblib.dump(ests["lr"], MODEL_DIR / "clf.joblib")
+        joblib.dump(ests, MODEL_DIR / "clf_ensemble.joblib")
+        print(f"[retrain-realtime] fast tier retrained "
+              f"({Xf.shape[1]} features) -> engine/models/")
+        return {"status": "retrained", "features": int(Xf.shape[1])}
+    except Exception as exc:  # fail-soft: deep tier already deployed
+        reason = f"{type(exc).__name__}: {exc}"[:120]
+        print(f"[retrain-realtime] fast tier skipped: {reason}")
+        return {"status": "skipped", "reason": reason}
 
 
 if __name__ == "__main__":

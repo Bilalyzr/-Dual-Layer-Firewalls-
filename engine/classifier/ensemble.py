@@ -68,12 +68,22 @@ class EnsembleClassifier:
 
 
 _singleton: EnsembleClassifier | None = None
+_MTIME: float = 0.0  # artifact mtime at last load — hot-reload after retrain
+
+
+def _artifacts_mtime() -> float:
+    try:
+        return max(VECT_PATH.stat().st_mtime, ENSEMBLE_PATH.stat().st_mtime)
+    except OSError:
+        return 0.0
 
 
 def get_ensemble() -> EnsembleClassifier:
-    global _singleton
-    if _singleton is None:
+    global _singleton, _MTIME
+    mtime = _artifacts_mtime()
+    if _singleton is None or (mtime and mtime != _MTIME):
         _singleton = EnsembleClassifier()
+        _MTIME = mtime
     return _singleton
 
 

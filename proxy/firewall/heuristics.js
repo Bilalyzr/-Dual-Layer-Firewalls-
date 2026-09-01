@@ -20,9 +20,11 @@
 
 // Each rule: regex (case-insensitive), category, label.
 const RULES = [
-  // Direct / indirect instruction overrides — LLM01.
+  // Direct / indirect instruction overrides — LLM01. Covers inflections
+  // ("ignoring", "ignored") that dodge a bare `ignore` match, and the same
+  // noun set as the v2 sanitizer (incl. constraints/guidelines).
   {
-    re: /\b(ignore|disregard|forget|override|skip)\b[^.]{0,40}\b(previous|prior|above|earlier|all)\s+(instructions?|rules?|prompts?|directives?|directions?)\b/i,
+    re: /\b(ignore[sd]?|ignoring|disregard(?:ing|ed)?|forget(?:ting)?|override|skip(?:ping)?)\b[^.]{0,40}\b(previous|prior|above|earlier|all|any)\s+(instructions?|rules?|prompts?|directives?|directions?|constraints?|guidelines?)\b/i,
     category: "LLM01",
     label: "Instruction override (ignore previous instructions)",
   },
@@ -151,6 +153,37 @@ function normalize(text) {
   return text.normalize("NFKC").normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+// Leetspeak folding (mirrors the v2 sanitizer's deobfuscate): "1gn0re" →
+// "ignore" so the instruction-override rules fire on obfuscated attacks.
+function deleet(text) {
+  return text.replace(/[013457@$]/g, (c) => (
+    { "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s" }[c] || c
+  ));
+}
+
+// Base64-smuggled injections: find base64-looking tokens (16+ chars, valid
+// alphabet), decode, and if the payload carries an override/exfiltration
+// command it is an attack outright (no benign reason to encode "ignore all
+// rules"). Mirrors the v2 sanitizer's outright base64-payload block.
+const B64_TOKEN = /\b[A-Za-z0-9+/]{16,}={0,2}\b/g;
+const B64_HOSTILE = /(ignore|disregard|forget|bypass|override|reveal|exfiltrate|output|print)[^.]{0,40}(instruction|rule|prompt|constraint|guardrail|api.?key|secret|credential|token|system)/i;
+
+function scanBase64(text, signals) {
+  for (const tok of text.match(B64_TOKEN) || []) {
+    try {
+      const decoded = Buffer.from(tok, "base64").toString("utf8");
+      if (B64_HOSTILE.test(decoded)) {
+        signals.push({
+          category: "LLM01",
+          label: "Base64-smuggled instruction override",
+          snippet: `decoded: ${decoded.slice(0, 48)}`,
+        });
+        return; // one signal is enough; snippets stay small
+      }
+    } catch { /* not valid base64 — ignore */ }
+  }
+}
+
 function scan(str, signals, matchedRules) {
   for (const rule of RULES) {
     if (matchedRules.has(rule)) continue; // already fired on a prior pass
@@ -183,6 +216,12 @@ export function runHeuristics(text) {
     // Pass 2: normalized text — only adds rules that evasion hid from pass 1.
     const norm = normalize(text);
     if (norm !== text) scan(norm, signals, matchedRules);
+    // Pass 3: leetspeak-folded — "1gn0re pr10r c0nstra1nts" → readable form.
+    const deleetText = deleet(norm);
+    if (deleetText !== norm) scan(deleetText, signals, matchedRules);
+    // Pass 4: base64 payloads decoded in place — a hostile decoded command is
+    // an attack regardless of how innocuous the encoded token looks.
+    scanBase64(text, signals);
   }
   const latencyMs = +(performance.now() - t0).toFixed(3);
   return { matched: signals.length > 0, signals, latencyMs };
