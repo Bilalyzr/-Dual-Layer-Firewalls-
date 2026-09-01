@@ -173,15 +173,18 @@ class Settings:
 
     # ---- Two-tier cascade (TF-IDF screening -> MiniLM depth) ------------- #
     cascade_enabled: bool = field(default_factory=lambda: _envb("CASCADE_ENABLED", True))
-    # TF-IDF at/above this blocks instantly (obvious lexical threat).
+    # TF-IDF at/above this blocks instantly (obvious lexical threat). 0.85 is
+    # calibrated to the hybrid live+seed ensemble (score distribution is
+    # compressed vs the curated-only model: canonical attacks ~0.86-0.95,
+    # worst benign ~0.47).
     cascade_fast_block: float = field(
-        default_factory=lambda: _envf("CASCADE_FAST_BLOCK", 0.90)
+        default_factory=lambda: _envf("CASCADE_FAST_BLOCK", 0.85)
     )
     # TF-IDF below this AND clean weightage AND clean sanitizer allows
     # instantly. Lexical-lowness alone is NEVER enough (novel attacks score
     # ~0.00 on TF-IDF) — all cheap signals must agree.
     cascade_fast_low: float = field(
-        default_factory=lambda: _envf("CASCADE_FAST_LOW", 0.20)
+        default_factory=lambda: _envf("CASCADE_FAST_LOW", 0.25)
     )
     cascade_clean_weightage: float = field(
         default_factory=lambda: _envf("CASCADE_CLEAN_WEIGHTAGE", 0.20)

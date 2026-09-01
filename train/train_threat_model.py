@@ -418,26 +418,98 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
 
     Mirrors engine/classifier/ensemble.py estimators; both loaders
     (firewall cascade + engine /classify) hot-reload on file mtime.
+
+    GATED like the deep head: the challenger trains on live samples + the
+    curated seed corpus, and deploys only when its macro-F1 on a stratified
+    holdout beats the incumbent's on the SAME rows. (An ungated live-only
+    fast tier once regressed the curated artifacts — engine holdout fell and
+    known jailbreaks slipped under threshold.)
     """
     try:
         import joblib
         from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics import f1_score
+        from sklearn.model_selection import train_test_split
 
-        from engine.classifier.ensemble import MODEL_DIR, build_estimators
+        from engine.classifier.ensemble import (
+            ENSEMBLE_PATH, MODEL_DIR, VECT_PATH, build_estimators, ensemble_ready,
+        )
 
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        # Hybrid corpus: live traffic keeps it current, the curated seed keeps
+        # it calibrated on the canonical attack/benign set. Labels are mapped
+        # PER SOURCE into the ENGINE convention (0 = threat, 1 = benign) —
+        # what the deployed artifacts' consumers read (engine /classify and
+        # the firewall cascade take classes_.index(0) as P(threat)).
+        # Live store: 1 = threat. Seed: already 0 = threat.
+        seed_rows = load_dataset()
+        live_y_engine = [0 if l == 1 else 1 for l in y]
+        seed_y_engine = [lab for _, lab in seed_rows]
+        all_texts = list(texts) + [t for t, _ in seed_rows]
+        all_y_engine = live_y_engine + seed_y_engine
+
+        Xtr, Xte, ytr, yte = train_test_split(
+            all_texts, all_y_engine, test_size=0.25, random_state=SEED,
+            stratify=all_y_engine)
+
         vec = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True,
                               strip_accents="unicode", min_df=1)
-        Xf = vec.fit_transform(texts)
+        Xv_tr = vec.fit_transform(Xtr)
         ests = build_estimators()
         for est in ests.values():
-            est.fit(Xf, y)
+            est.fit(Xv_tr, ytr)
+
+        def _soft_vote(vectorizer, estimators, rows, threat_class):
+            """P(threat) under THAT model's own label convention.
+
+            Both the challenger and the incumbent use the engine convention
+            (0 = threat); the score is mapped to a common 1 = predicted-threat
+            decision for the F1 comparison.
+            """
+            X = vectorizer.transform(rows)
+            import numpy as np
+
+            probs = []
+            for name in ("lr", "svc", "rf"):
+                p = estimators[name].predict_proba(X)
+                idx = list(estimators[name].classes_).index(threat_class)
+                probs.append(p[:, idx])
+            return np.mean(probs, axis=0)
+
+        # yte is engine-encoded (0 = threat); the vote yields 1 = threat.
+        yte_cmp = [1 - v for v in yte]
+        challenger_f1 = f1_score(
+            yte_cmp, (_soft_vote(vec, ests, Xte, threat_class=0) >= 0.5).astype(int),
+            average="macro")
+
+        incumbent_f1 = None
+        if ensemble_ready():
+            try:
+                inc_vec = joblib.load(VECT_PATH)
+                inc_ests = joblib.load(ENSEMBLE_PATH)
+                incumbent_f1 = f1_score(
+                    yte_cmp, (_soft_vote(inc_vec, inc_ests, Xte, threat_class=0) >= 0.5).astype(int),
+                    average="macro")
+            except Exception:
+                incumbent_f1 = None
+
+        if incumbent_f1 is not None and challenger_f1 < float(incumbent_f1) - 0.005:
+            print(f"[retrain-realtime] fast tier PROMOTION REJECTED — challenger "
+                  f"{challenger_f1:.4f} < incumbent {float(incumbent_f1):.4f} − 0.005; "
+                  "keeping the live artifacts")
+            return {"status": "rejected", "challenger_f1": round(float(challenger_f1), 4),
+                    "incumbent_f1": round(float(incumbent_f1), 4)}
+
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
         joblib.dump(vec, MODEL_DIR / "tfidf.joblib")
         joblib.dump(ests["lr"], MODEL_DIR / "clf.joblib")
         joblib.dump(ests, MODEL_DIR / "clf_ensemble.joblib")
         print(f"[retrain-realtime] fast tier retrained "
-              f"({Xf.shape[1]} features) -> engine/models/")
-        return {"status": "retrained", "features": int(Xf.shape[1])}
+              f"({Xv_tr.shape[1]} features, macro-F1 {challenger_f1:.4f} vs "
+              f"incumbent {incumbent_f1 if incumbent_f1 is None else round(float(incumbent_f1), 4)}) "
+              f"-> engine/models/")
+        return {"status": "retrained", "features": int(Xv_tr.shape[1]),
+                "macro_f1": round(float(challenger_f1), 4),
+                "incumbent_f1": None if incumbent_f1 is None else round(float(incumbent_f1), 4)}
     except Exception as exc:  # fail-soft: deep tier already deployed
         reason = f"{type(exc).__name__}: {exc}"[:120]
         print(f"[retrain-realtime] fast tier skipped: {reason}")
