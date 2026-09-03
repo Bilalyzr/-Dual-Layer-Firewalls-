@@ -303,3 +303,56 @@ def sentiment_score(req: SentimentScoreRequest):
         result["weightage"], result["semantic"].get("weightage", 0.0))
     result["latency_ms"] = round(1000 * (_time.perf_counter() - t0), 3)
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Personal test-report dashboard (GET /reports). Auto-fed by the pytest hooks
+# (tests/conftest.py, engine/tests/conftest.py) and the red-team battery.
+# --------------------------------------------------------------------------- #
+@router.get("/reports")
+def reports_page():
+    from fastapi.responses import HTMLResponse
+
+    from services.report_page import PAGE
+
+    return HTMLResponse(PAGE)
+
+
+@router.get("/reports/data")
+def reports_data():
+    from services import audit_log, realtime_learner, report_store
+
+    runs = report_store.read_all()
+    model_versions: list[dict] = []
+    store: dict = {}
+    current_version: dict = {}
+    try:
+        from services.audit_log import latest_model_version
+
+        current_version = latest_model_version() or {}
+    except Exception:
+        pass
+    try:
+        model_versions = audit_log.list_model_versions(limit=40) if hasattr(
+            audit_log, "list_model_versions") else []
+    except Exception:
+        pass
+    try:
+        st = realtime_learner.stats()
+        samples = st.get("samples", {})
+        store = {
+            "total": samples.get("total", 0),
+            "threat": samples.get("threat", 0),
+            "benign": samples.get("benign", 0),
+            "last_retrain": (st.get("auto_train", {}).get("last_retrain") or {}).get("at"),
+        }
+    except Exception:
+        pass
+    return {
+        "runs": runs,
+        "total_runs": len(runs),
+        "latest_ts": runs[-1]["ts"] if runs else None,
+        "model_versions": model_versions,
+        "current_version": current_version,
+        "store": store,
+    }

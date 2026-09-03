@@ -639,6 +639,33 @@ def record_model_version(*, source: str, samples: int, threat: int,
     return version
 
 
+def list_model_versions(limit: int = 40) -> list[dict[str, Any]]:
+    """Oldest-first version history (for the /reports model-trend chart)."""
+    try:
+        if _BACKEND == "postgres" and _PG is not None:
+            cur = _PG.execute(
+                "SELECT version, trained_at, source, samples, threat, benign, metrics"
+                " FROM model_versions ORDER BY version ASC LIMIT %s", (limit,))
+            cols = [c.name for c in cur.description]
+            rows = []
+            for r in cur.fetchall():
+                d = dict(zip(cols, r))
+                if isinstance(d.get("metrics"), str):
+                    d["metrics"] = json.loads(d["metrics"] or "{}")
+                rows.append(d)
+            return rows
+        if _BACKEND == "sqlite" and _SQLITE is not None:
+            cur = _SQLITE.execute(
+                "SELECT version, trained_at, source, samples, threat, benign, metrics"
+                " FROM model_versions ORDER BY version ASC LIMIT ?", (limit,))
+            return [{"version": r[0], "trained_at": r[1], "source": r[2],
+                     "samples": r[3], "threat": r[4], "benign": r[5],
+                     "metrics": json.loads(r[6] or "{}")} for r in cur.fetchall()]
+    except Exception:
+        pass
+    return list(_MEM_VERSIONS)[-limit:]
+
+
 def latest_model_version() -> dict[str, Any]:
     try:
         if _BACKEND == "postgres" and _PG is not None:

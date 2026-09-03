@@ -105,6 +105,27 @@ def main() -> int:
     ok = benign_ok == len(BENIGN) and site_hits == len(ATTACKS) and v2_hits == len(ATTACKS)
     print("RESULT:", "ALL CLEAR — every custom attack blocked, every benign served"
           if ok else "GAPS FOUND — see MISS/FALS rows above")
+
+    # Personal report dashboard (GET /reports): every battery run is recorded.
+    try:
+        from pathlib import Path as _Path
+
+        _root = _Path(__file__).resolve().parent.parent
+        if str(_root) not in sys.path:
+            sys.path.insert(0, str(_root))
+        from services.report_store import append_record
+
+        append_record(
+            "battery",
+            site_blocked=site_hits, v2_blocked=v2_hits,
+            combined=combined_hits, attacks=len(ATTACKS),
+            benign_ok=benign_ok, benign_total=len(BENIGN),
+            missed=[p[:80] for p in missed],
+            false_positives=[p[:80] for p in falsely_blocked],
+            all_clear=bool(ok),
+        )
+    except Exception:
+        pass
     return 0 if ok else 1
 
 
