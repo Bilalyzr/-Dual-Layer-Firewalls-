@@ -30,6 +30,7 @@ import {
 let client = null;
 let db = null;
 let connected = false;
+let retryTimer = null;
 
 // In-memory fallbacks (used if Mongo is down — demo-safe).
 const mem = {
@@ -45,7 +46,7 @@ const mem = {
 export async function connect() {
   if (connected) return db;
   try {
-    client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+    client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
     await client.connect();
     db = client.db();
     await Promise.all([
@@ -64,6 +65,16 @@ export async function connect() {
   } catch (err) {
     connected = false;
     console.warn(`[db] mongo unavailable, using in-memory fallback: ${err.message}`);
+    // Cloud deploys are cross-region (Render Oregon <-> Atlas): the first
+    // handshake can miss even a generous selection window, so retry in the
+    // background instead of staying degraded until the next restart.
+    if (!retryTimer) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect().catch(() => {});
+      }, 20000);
+      retryTimer.unref?.();
+    }
   }
   return db;
 }
