@@ -318,6 +318,17 @@ def reports_page():
     return HTMLResponse(PAGE)
 
 
+@router.get("/reports/testcase")
+def testcase_page():
+    """Formal QA-style Test Case Report (TC ID | Test Case | Input |
+    Expected | Actual | Status) — college review-template format."""
+    from fastapi.responses import HTMLResponse
+
+    from services.testcase_page import PAGE
+
+    return HTMLResponse(PAGE)
+
+
 @router.get("/reports/data")
 def reports_data():
     from services import audit_log, realtime_learner, report_store

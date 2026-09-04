@@ -1,12 +1,13 @@
 """
-Export the personal test report as a STANDALONE HTML file.
+Export the personal test reports as STANDALONE HTML files.
 
-All data (suite runs, battery history, model versions, training balance) is
-EMBEDDED as JSON inside the page — open it by double-click, share it, no
-server and no network needed.
+All data (suite runs, battery history incl. per-case verdicts, model
+versions, training balance) is EMBEDDED as JSON inside each page — open by
+double-click, share, no server and no network needed.
 
-    python scripts/export_report.py                 # -> data/reports/report.html
-    python scripts/export_report.py --out my.html   # custom path
+    python scripts/export_report.py
+      -> data/reports/report.html          (metrics dashboard)
+      -> data/reports/testcase_report.html (formal TC-table QA report)
 """
 from __future__ import annotations
 
@@ -53,37 +54,43 @@ def collect() -> dict:
     return data
 
 
-def render(data: dict) -> str:
-    from services.report_page import PAGE
+def render(data: dict) -> tuple[str, str]:
+    """Returns (dashboard_html, testcase_html) — both fully standalone."""
+    from services.report_page import PAGE as DASH
+    from services.testcase_page import PAGE as TC
 
     payload = json.dumps(data, default=str)
-    page = PAGE.replace(
-        "fetch('/reports/data').then(r => r.json()).then(d => {",
-        "const EMBEDDED = " + payload + ";\nPromise.resolve(EMBEDDED).then(d => {",
-    )
-    page = page.replace(
+    embedded = "const EMBEDDED = " + payload + ";\nPromise.resolve(EMBEDDED).then(d => {"
+    dash = DASH.replace(
+        "fetch('/reports/data').then(r => r.json()).then(d => {", embedded)
+    dash = dash.replace(
         "· data: data/reports/history.jsonl",
         "· standalone export — data embedded at generation time",
     )
-    return page
+    tc = TC.replace(
+        "fetch('/reports/data').then(r => r.json()).then(d => {", embedded)
+    return dash, tc
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=str(ROOT / "data" / "reports" / "report.html"))
+    ap.add_argument("--tc-out", default=str(ROOT / "data" / "reports" / "testcase_report.html"))
     args = ap.parse_args()
 
     data = collect()
-    html = render(data)
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-    size_kb = out.stat().st_size / 1024
+    dash_html, tc_html = render(data)
+    for path, html in ((args.out, dash_html), (args.tc_out, tc_html)):
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(html, encoding="utf-8")
+    size_kb = Path(args.tc_out).stat().st_size / 1024
     bats = sum(1 for r in data["runs"] if r["kind"] == "battery")
-    print(f"✓ {out}")
+    print(f"✓ {args.out}          (metrics dashboard)")
+    print(f"✓ {args.tc_out}  (test-case report, {size_kb:.0f} KB)")
     print(f"  {data['total_runs']} runs ({bats} batteries) · "
           f"{len(data['model_versions'])} model versions · "
-          f"store {data['store'].get('total', 0)} samples · {size_kb:.0f} KB")
+          f"store {data['store'].get('total', 0)} samples")
     return 0
 
 
