@@ -1,4 +1,4 @@
-# 🛡️ Dual-Layer AI Firewall — GenAI Security Proxy
+# Dual-Layer AI Firewall — GenAI Security Proxy
 
 A security proxy that sits in front of any LLM application and inspects every
 prompt and every response in real time:

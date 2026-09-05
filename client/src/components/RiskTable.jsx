@@ -6,6 +6,7 @@
  */
 import { Fragment, useState } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+import { IconAlert, IconCheck } from "./Icons.jsx";
 
 const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
 
@@ -44,8 +45,8 @@ export default function RiskTable() {
               <Fragment key={b.user_id}>
                 <tr onClick={() => setSelectedUser(selectedUser === b.user_id ? null : b.user_id)} style={{ cursor: "pointer" }}>
                   <td className="mono">{b.user_id}</td>
-                  <td>{b.device_trusted ? "✓ Trusted" : "⚠ New"}</td>
-                  <td>{b.location_change ? "⚠ Changed" : "Normal"}</td>
+                  <td>{b.device_trusted ? <><IconCheck size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} /> Trusted</> : <><IconAlert size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} /> New</>}</td>
+                  <td>{b.location_change ? <><IconAlert size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} /> Changed</> : "Normal"}</td>
                   <td>{Math.round((b.behavior_anomaly_score || 0) * 100)}%</td>
                   <td style={{ color: RISK_COLORS[b.risk_level] || "var(--muted)" }}>{b.risk_level || "—"}</td>
                   <td>{b.decision || "—"}</td>
@@ -70,7 +71,7 @@ export default function RiskTable() {
                             <ul style={{ listStyle: "none", marginTop: 4 }}>
                               {b.reasons.map((r, i) => (
                                 <li key={i} className="small" style={{ color: "var(--text-dim)", padding: "1px 0" }}>
-                                  {r.includes("within baseline") ? "✓" : "⚠"} {r}
+                                  {r.includes("within baseline") ? <IconCheck size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} /> : <IconAlert size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} />}{r}
                                 </li>
                               ))}
                             </ul>

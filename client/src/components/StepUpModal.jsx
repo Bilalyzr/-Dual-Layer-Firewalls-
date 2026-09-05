@@ -12,6 +12,7 @@ import {
   startAuthentication,
 } from "@simplewebauthn/browser";
 import { apiFetch } from "../lib/api";
+import { IconAlert, IconCheck, IconLock } from "./Icons.jsx";
 
 async function postJSON(url, body) {
   const res = await apiFetch(url, {
@@ -70,12 +71,12 @@ export default function StepUpModal({ open, onVerified, onCancel }) {
   return (
     <div className="modal-backdrop">
       <div className="modal stepup-modal">
-        <h2>🔐 Step-Up Authentication Required</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}><IconLock size={16} /> Step-Up Authentication Required</h2>
         <p className="muted">
           Your keystroke trust score collapsed below the enforcement threshold.
           Re-verify with your passkey or security key to continue.
         </p>
-        {error && <div className="stepup-error">⚠ {error}</div>}
+        {error && <div className="stepup-error"><IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} /> {error}</div>}
         <div className="stepup-actions">
           <button
             className="btn"
@@ -98,7 +99,7 @@ export default function StepUpModal({ open, onVerified, onCancel }) {
           )}
         </div>
         {status === "registered" && (
-          <div className="stepup-ok">✓ Passkey registered — now click “Verify with passkey”.</div>
+          <div className="stepup-ok"><IconCheck size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} /> Passkey registered — now click “Verify with passkey”.</div>
         )}
       </div>
     </div>

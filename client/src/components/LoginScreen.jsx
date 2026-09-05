@@ -10,6 +10,7 @@
  */
 import { useState } from "react";
 import FaceAuthModal from "./FaceAuthModal";
+import { IconAlert, IconBan, IconCheck, IconKey, IconShield, IconUser } from "./Icons.jsx";
 
 export default function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -70,7 +71,7 @@ export default function LoginScreen({ onLogin }) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
         <div className="panel" style={{ width: 400, maxWidth: "90vw", textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>
+          <div style={{ marginBottom: 8, color: "var(--cyan)" }}><IconUser size={32} /></div>
           <h2 style={{ fontSize: 14, letterSpacing: 1, textTransform: "uppercase" }}>Face Enrollment Required</h2>
           <p className="muted small" style={{ marginTop: 8 }}>
             New users must enroll their face for authentication.
@@ -79,7 +80,7 @@ export default function LoginScreen({ onLogin }) {
           {!isLocalhost && (
             <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "rgba(255,56,96,0.1)", border: "1px solid rgba(255,56,96,0.3)" }}>
               <div className="small" style={{ color: "#ff3860" }}>
-                ⚠ Camera requires <b>localhost</b> or HTTPS. You're on {window.location.hostname}.
+                <IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} /> Camera requires <b>localhost</b> or HTTPS. You're on {window.location.hostname}.
               </div>
               <div className="muted small" style={{ marginTop: 4 }}>
                 Open <code>http://localhost:5174</code> instead of the IP address.
@@ -101,7 +102,7 @@ export default function LoginScreen({ onLogin }) {
               }}
               onSkip={() => {
                 // User chose to defer face enrollment — proceed to dashboard.
-                // They can enroll later from the topbar "👤 ENROLL FACE" button.
+                // They can enroll later from the topbar ENROLL FACE button.
                 setPendingUser(null);
                 onLogin?.(pendingUser);
               }}
@@ -122,7 +123,7 @@ export default function LoginScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
       <div className="panel" style={{ width: 400, maxWidth: "90vw" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <span style={{ fontSize: 40, filter: "drop-shadow(0 0 10px rgba(0,240,255,0.7))" }}>🛡️</span>
+          <span style={{ color: "var(--cyan)", filter: "drop-shadow(0 0 10px rgba(0,240,255,0.7))" }}><IconShield size={40} /></span>
           <h2 style={{ fontSize: 14, letterSpacing: 2, textTransform: "uppercase", marginTop: 8 }}>
             Dual-Layer AI Firewall
           </h2>
@@ -145,13 +146,13 @@ export default function LoginScreen({ onLogin }) {
           Demo: admin / admin123 · analyst / sec123 · demo / demo
         </div>
         <div className="muted small" style={{ textAlign: "center", marginTop: 4 }}>
-          New users will be asked to enroll their face 🔑
+          New users will be asked to enroll their face <IconKey size={12} style={{ verticalAlign: "-2px" }} />
         </div>
 
         {result && !result.success && (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: `${riskColor}15`, border: `1px solid ${riskColor}40` }}>
             <div style={{ color: riskColor, fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: 1 }}>
-              ⛔ {result.error || "Login Failed"}
+              <IconBan size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} /> {result.error || "Login Failed"}
             </div>
             {result.behavioral && (
               <>
@@ -159,7 +160,7 @@ export default function LoginScreen({ onLogin }) {
                   Risk Score: <b style={{ color: riskColor }}>{result.behavioral.risk_score}/100</b> ({result.behavioral.risk_level})
                 </div>
                 {result.behavioral.reasons?.slice(0, 4).map((r, i) => (
-                  <div key={i} className="small" style={{ color: "var(--text-dim)", marginTop: 2 }}>⚠ {r}</div>
+                  <div key={i} className="small" style={{ color: "var(--text-dim)", marginTop: 2 }}><IconAlert size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} /> {r}</div>
                 ))}
               </>
             )}
@@ -168,7 +169,7 @@ export default function LoginScreen({ onLogin }) {
 
         {result?.success && (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "#00ff9d15", border: "1px solid #00ff9d40" }}>
-            <div style={{ color: "#00ff9d", fontWeight: 700, fontSize: 13 }}>✓ Login Successful</div>
+            <div style={{ color: "#00ff9d", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
             <div className="small muted" style={{ marginTop: 4 }}>
               Risk: {result.behavioral?.risk_score}/100 ({result.behavioral?.risk_level})
             </div>

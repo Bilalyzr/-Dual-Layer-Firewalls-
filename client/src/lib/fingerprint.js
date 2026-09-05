@@ -7,7 +7,7 @@
  *   - WebGL: renderer + vendor string (GPU identity)
  *   - AudioContext: oscillator → analyzer → hash (catches audio-stack diffs)
  *
- * ⚠️ GDPR personal data — STRICTLY behind the Epic I consent gate. The hook
+ * GDPR personal data — STRICTLY behind the Epic I consent gate. The hook
  * refuses to collect anything until hasConsent("fingerprint") is true. The
  * fingerprint is hashed before transmission (never raw canvas/audio data).
  */
@@ -31,9 +31,9 @@ async function canvasFingerprint() {
     ctx.fillStyle = "#f60";
     ctx.fillRect(0, 0, 100, 30);
     ctx.fillStyle = "#069";
-    ctx.fillText("Dual-Layer 🛡️ fingerprint", 2, 15);
+    ctx.fillText("Dual-Layer firewall fingerprint", 2, 15);
     ctx.fillStyle = "rgba(102,204,0,0.7)";
-    ctx.fillText("Dual-Layer 🛡️ fingerprint", 4, 17);
+    ctx.fillText("Dual-Layer firewall fingerprint", 4, 17);
     return hash(c.toDataURL());
   } catch {
     return "canvas-blocked";

@@ -90,9 +90,6 @@ export default function App() {
         <div className="user">
           <span style={{ color: "var(--cyan)" }}>{authUser?.role || "user"}</span>
           {" "}<code>{userId}</code>
-          {/* Face auth temporarily disabled — re-enable by uncommenting the buttons below */}
-          {/* <button onClick={() => setFaceModal("enroll")} style={{ marginLeft: 10, background: "none", border: "1px solid var(--panel-edge)", color: "var(--cyan)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>👤 ENROLL FACE</button>
-          <button onClick={() => setFaceModal("verify")} style={{ marginLeft: 6, background: "none", border: "1px solid var(--panel-edge)", color: "var(--ok)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>🔐 VERIFY FACE</button> */}
           <button onClick={handleLogout} style={{ marginLeft: 10, background: "none", border: "1px solid var(--panel-edge)", color: "var(--muted)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}>LOGOUT</button>
         </div>
       </header>

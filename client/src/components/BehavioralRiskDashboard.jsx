@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+import { IconAlert, IconCheck } from "./Icons.jsx";
 
 const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
@@ -219,7 +220,7 @@ export default function BehavioralRiskDashboard({ userId }) {
           <ul style={{ listStyle: "none", marginTop: 6 }}>
             {latest.reasons.map((r, i) => (
               <li key={i} className="small" style={{ padding: "2px 0", color: r.includes("within baseline") ? "var(--muted)" : color }}>
-                {r.includes("within baseline") ? "✓" : "⚠"} {r}
+                {r.includes("within baseline") ? <IconCheck size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} /> : <IconAlert size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} />}{r}
               </li>
             ))}
           </ul>
@@ -245,8 +246,8 @@ export default function BehavioralRiskDashboard({ userId }) {
 
       {/* Demo buttons */}
       <div className="chat-actions" style={{ marginTop: 10, marginBottom: 6 }}>
-        <button className="btn" onClick={() => sendEvent("normal")} disabled={loading}>✓ Normal behavior</button>
-        <button className="btn" onClick={() => sendEvent("anomalous")} disabled={loading} style={{ background: "linear-gradient(135deg, var(--red), var(--orange))" }}>⚠ Anomalous behavior</button>
+        <button className="btn" onClick={() => sendEvent("normal")} disabled={loading}><IconCheck size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Normal behavior</button>
+        <button className="btn" onClick={() => sendEvent("anomalous")} disabled={loading} style={{ background: "linear-gradient(135deg, var(--red), var(--orange))" }}><IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Anomalous behavior</button>
       </div>
 
       {/* Live events feed */}

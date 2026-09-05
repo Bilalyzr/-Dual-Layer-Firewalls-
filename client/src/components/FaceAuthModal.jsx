@@ -17,6 +17,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as faceapi from "face-api.js";
+import { IconAlert, IconArrowLeft, IconArrowRight, IconCheck, IconClock, IconCamera, IconLock, IconSmile, IconUser, IconX } from "./Icons.jsx";
 
 const MODEL_URL = "/models";
 let modelsLoaded = false;
@@ -58,9 +59,9 @@ async function detectFace(video) {
 }
 
 const ENROLL_STEPS = [
-  { label: "FRONT VIEW", instruction: "Look straight at the camera", icon: "😀" },
-  { label: "LEFT VIEW", instruction: "Turn your head slightly LEFT (about 30°)", icon: "👈" },
-  { label: "RIGHT VIEW", instruction: "Turn your head slightly RIGHT (about 30°)", icon: "👉" },
+  { label: "FRONT VIEW", instruction: "Look straight at the camera", icon: IconSmile },
+  { label: "LEFT VIEW", instruction: "Turn your head slightly LEFT (about 30°)", icon: IconArrowLeft },
+  { label: "RIGHT VIEW", instruction: "Turn your head slightly RIGHT (about 30°)", icon: IconArrowRight },
 ];
 
 export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSkip }) {
@@ -73,6 +74,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
   const statusRef = useRef("loading");
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("Loading face recognition models...");
+  const [msgKind, setMsgKind] = useState("info"); // info | ok | warn
   const [step, setStep] = useState(0);
   const [captured, setCaptured] = useState([]); // collected descriptors
   const [cameraReady, setCameraReady] = useState(false); // true the moment a live stream attaches
@@ -203,7 +205,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
       const result = await detectFace(videoRef.current);
       if (!result) {
         updateStatus("ready");
-        setMessage("⚠ Could not capture. Make sure your face is clearly visible.");
+        setMsgKind("warn"); setMessage("Could not capture. Make sure your face is clearly visible.");
         return;
       }
       const descriptor = Array.from(result.descriptor);
@@ -217,7 +219,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
           const nextStep = newCaptured.length;
           setStep(nextStep);
           updateStatus("ready");
-          setMessage(`✓ ${ENROLL_STEPS[newCaptured.length - 1].label} captured! Now: ${ENROLL_STEPS[nextStep].instruction}`);
+          setMsgKind("ok"); setMessage(`${ENROLL_STEPS[newCaptured.length - 1].label} captured! Now: ${ENROLL_STEPS[nextStep].instruction}`);
           return;
         }
 
@@ -236,7 +238,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
         const data = await res.json();
         if (data.success) {
           updateStatus("success");
-          setMessage("✓ Face enrolled with 3 angles! Face authentication is now active.");
+          setMsgKind("ok"); setMessage("Face enrolled with 3 angles! Face authentication is now active.");
           stopCamera();
           setTimeout(() => onVerified?.(), 2500);
         } else {
@@ -254,18 +256,18 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
         const data = await res.json();
         if (data.success && data.match) {
           updateStatus("success");
-          setMessage(`✓ Face verified! (confidence: ${(100 - data.distance * 50).toFixed(1)}%)`);
+          setMsgKind("ok"); setMessage(`Face verified! (confidence: ${(100 - data.distance * 50).toFixed(1)}%)`);
           stopCamera();
           setTimeout(() => onVerified?.(true), 2000);
         } else {
           updateStatus("failed");
-          setMessage(data.match === false ? "✗ Face does not match" : (data.error || "Verification failed"));
+          setMsgKind("warn"); setMessage(data.match === false ? "Face does not match" : (data.error || "Verification failed"));
           setTimeout(() => { updateStatus("ready"); setMessage("Try again — look at the camera"); }, 2500);
         }
       }
     } catch (err) {
       updateStatus("failed");
-      setMessage(`Error: ${err.message}`);
+      setMsgKind("warn"); setMessage(`Error: ${err.message}`);
       setTimeout(() => { updateStatus("ready"); setMessage("Try again"); }, 2000);
     }
   };
@@ -282,9 +284,9 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
       <div className="panel" style={{ width: 440, maxWidth: "92vw", textAlign: "center" }}>
         {/* Header */}
         <div className="panel-head">
-          <h2>{mode === "enroll" ? "👤 Face Enrollment" : "🔐 Face Verification"}</h2>
+          <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>{mode === "enroll" ? <><IconUser size={15} /> Face Enrollment</> : <><IconLock size={15} /> Face Verification</>}</h2>
           <button onClick={() => { stopCamera(); onCancel?.(); }}
-            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 18 }}>✕</button>
+            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 18, display: "inline-flex" }}><IconX size={16} /></button>
         </div>
 
         {/* Progress indicator */}
@@ -297,7 +299,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
                 color: i < captured.length ? "var(--ok)" : i === step ? "var(--cyan)" : "var(--muted)",
                 border: `1px solid ${i < captured.length ? "rgba(0,255,157,0.3)" : i === step ? "rgba(0,240,255,0.3)" : "transparent"}`,
               }}>
-                {i < captured.length ? "✓" : i + 1}. {s.label}
+                {i < captured.length ? <IconCheck size={10} style={{ verticalAlign: "-1px" }} /> : i + 1}. {s.label}
               </div>
             ))}
           </div>
@@ -320,19 +322,19 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
           {status === "loading" && (
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--cyan)" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 32 }}>⏳</div>
+                <div><IconClock size={32} /></div>
                 <div className="small" style={{ marginTop: 6 }}>{message}</div>
               </div>
             </div>
           )}
           {status === "success" && (
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,255,157,0.15)" }}>
-              <div style={{ fontSize: 64 }}>✓</div>
+              <div><IconCheck size={64} /></div>
             </div>
           )}
           {status === "detecting" && (
             <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center" }}>
-              <span className="pill pill-ok" style={{ animation: "pulse 1s infinite" }}>📸 Capturing...</span>
+              <span className="pill pill-ok" style={{ animation: "pulse 1s infinite" }}><IconCamera size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} /> Capturing...</span>
             </div>
           )}
 
@@ -372,7 +374,7 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
                 backdropFilter: "blur(6px)", letterSpacing: 1.5, textTransform: "uppercase",
               }}
             >
-              📸 CAPTURE
+              <IconCamera size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} /> CAPTURE
             </button>
           )}
         </div>
@@ -383,8 +385,10 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
           minHeight: 24, marginBottom: 10,
         }}>
           {status === "ready" && currentStep && (
-            <span style={{ fontSize: 14 }}>{currentStep.icon} </span>
+            <span style={{ fontSize: 14, display: "inline-flex", verticalAlign: "middle" }}>{(() => { const S = currentStep.icon; return <S size={14} />; })()} </span>
           )}
+          {msgKind === "ok" && <IconCheck size={12} style={{ verticalAlign: "-2px", marginRight: 4, color: "var(--ok)" }} />}
+          {msgKind === "warn" && <IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />}
           {message}
         </div>
 
@@ -406,13 +410,13 @@ export default function FaceAuthModal({ mode, userId, onVerified, onCancel, onSk
               transition: "all 0.2s",
             }}
           >
-            📸 CAPTURE {mode === "enroll" ? ENROLL_STEPS[captured.length]?.label || "FACE" : "FACE"}
+            <IconCamera size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} /> CAPTURE {mode === "enroll" ? ENROLL_STEPS[captured.length]?.label || "FACE" : "FACE"}
           </button>
         )}
 
         {status === "detecting" && (
           <button disabled style={{ width: "100%", padding: "14px", fontSize: 15, borderRadius: 8, opacity: 0.5, border: "none", background: "var(--panel-2)", color: "var(--muted)" }}>
-            ⏳ Processing...
+            <IconClock size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Processing...
           </button>
         )}
 
