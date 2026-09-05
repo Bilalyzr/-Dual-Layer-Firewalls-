@@ -1,4 +1,4 @@
-> # Zero-downtime deploy pipeline — runs AFTER the CI suite is green.
+# Zero-downtime deploy pipeline — runs AFTER the CI suite is green.
 name: Deploy (blue-green)
 
 on:
