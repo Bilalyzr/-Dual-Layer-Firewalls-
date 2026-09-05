@@ -31,6 +31,7 @@ let client = null;
 let db = null;
 let connected = false;
 let retryTimer = null;
+let attemptedOnce = false;
 
 // In-memory fallbacks (used if Mongo is down — demo-safe).
 const mem = {
@@ -45,8 +46,13 @@ const mem = {
 
 export async function connect() {
   if (connected) return db;
+  // First attempt fails fast (like the original 2s) so Mongo-less environments
+  // (CI smoke boots, partial local runs) aren't held hostage at startup;
+  // background retries use the full window for the cross-region handshake.
+  const selectionTimeout = attemptedOnce ? 10000 : 2500;
+  attemptedOnce = true;
   try {
-    client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+    client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: selectionTimeout });
     await client.connect();
     db = client.db();
     await Promise.all([
