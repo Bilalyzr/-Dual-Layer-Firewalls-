@@ -7,10 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
 
+// The inspection chain a prompt really travels (7 layers + the LLM answer);
+// the loading indicator lights these up in order while the request is in flight.
+const PIPELINE = ["sanitize", "sentiment", "cascade", "memory", "behavior", "rag", "decision", "llm"];
+
 export default function ChatPanel({ userId }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState(0);
   const [stepUp, setStepUp] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState(null);
   const logRef = useRef(null);
@@ -20,6 +25,18 @@ export default function ChatPanel({ userId }) {
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  // Pipeline-scan indicator: advance one layer at a time while the request
+  // runs, dwell on "answering", then loop (the LLM fallback can take a while).
+  useEffect(() => {
+    if (!busy) return;
+    setStage(0);
+    const t = setInterval(
+      () => setStage((s) => (s > PIPELINE.length ? 0 : s + 1)),
+      620
+    );
+    return () => clearInterval(t);
+  }, [busy]);
 
   const send = async (override) => {
     const text = (typeof override === "string" ? override : input).trim();
@@ -183,7 +200,25 @@ export default function ChatPanel({ userId }) {
         {busy && (
           <div className="msg msg-assistant">
             <div className="msg-role">assistant</div>
-            <div className="chat-typing"><i /><i /><i /> inspecting &amp; answering…</div>
+            <div className="chat-pipeline" role="status" aria-label="inspecting prompt through firewall layers">
+              <div className="pl-track">
+                {PIPELINE.map((name, i) => (
+                  <span
+                    key={name}
+                    className={`pl-chip${i < stage ? " done" : ""}${i === stage ? " active" : ""}`}
+                  >
+                    {i < stage ? "✓ " : ""}{name}
+                  </span>
+                ))}
+              </div>
+              <div className="pl-bar"><i className="pl-scan" /></div>
+              <div className="pl-label">
+                {stage < PIPELINE.length - 1
+                  ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
+                  : "answering"}
+                <span className="pl-dots"><i /><i /><i /></span>
+              </div>
+            </div>
           </div>
         )}
       </div>
