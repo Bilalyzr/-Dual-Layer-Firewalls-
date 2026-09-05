@@ -51,7 +51,7 @@ export function collectEvidence() {
       },
       CC7_systemOperations: {
         description: "Circuit breakers + health checks + SLA monitoring",
-        evidence: "proxy/firewall/circuitBreaker.js, proxy/observability/sla.js",
+        evidence: "proxy/llm/client.js (LLM provider breaker), proxy/observability/sla.js",
         operating: true,
       },
       CC7_incidentResponse: {
