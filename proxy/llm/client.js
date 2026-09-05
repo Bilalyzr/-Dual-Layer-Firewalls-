@@ -124,22 +124,46 @@ export function llmConfig() {
   };
 }
 
+// Circuit breaker for the primary provider. When the provider endpoint hangs
+// (observed with open.bigmodel.cn on some networks), every request burns the
+// full timeout — plus the DNS-bypass retry — before the local fallback even
+// starts. After BREAKER_THRESHOLD consecutive failures we skip the primary
+// entirely for BREAKER_COOLDOWN_MS, so replies come at local-fallback speed.
+// The next request after the cooldown probes the primary again (half-open).
+const _breaker = { fails: 0, openUntil: 0 };
+const BREAKER_THRESHOLD = 2;
+const BREAKER_COOLDOWN_MS = 120_000;
+const breakerOpen = () => Date.now() < _breaker.openUntil;
+function recordPrimaryFailure() {
+  if (++_breaker.fails >= BREAKER_THRESHOLD) {
+    _breaker.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    _breaker.fails = 0;
+    // The primary is down — make sure the fallback model is resident NOW so
+    // the next request doesn't also pay Ollama's cold load.
+    warmFallbackNow();
+  }
+}
+const recordPrimarySuccess = () => { _breaker.fails = 0; _breaker.openUntil = 0; };
+
 // Keep the local fallback model resident in RAM. Ollama evicts an idle model
 // after keep_alive — the next real request then pays a ~25-30s cold load ON
 // TOP of the primary's timeout, which users experience as a hang. A 1-token
 // ping every 8 minutes costs nothing and keeps replies warm (~5-10s CPU).
 let _warmerStarted = false;
-export function startFallbackWarmer() {
-  if (_warmerStarted || !fallbackUrl()) return;
-  _warmerStarted = true;
-  const ping = () => fetch(`${fallbackUrl()}/chat/completions`, {
+function warmFallbackNow() {
+  if (!fallbackUrl()) return;
+  fetch(`${fallbackUrl()}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: fallbackModel(), messages: [{ role: "user", content: "ok" }], max_tokens: 1, keep_alive: "30m" }),
     signal: AbortSignal.timeout(90_000),
   }).catch(() => {});
-  setTimeout(ping, 3_000);        // warm once shortly after boot
-  setInterval(ping, 8 * 60_000);  // and keep it resident
+}
+export function startFallbackWarmer() {
+  if (_warmerStarted || !fallbackUrl()) return;
+  _warmerStarted = true;
+  setTimeout(warmFallbackNow, 3_000);       // warm once shortly after boot
+  setInterval(warmFallbackNow, 8 * 60_000); // and keep it resident
 }
 
 /**
@@ -177,6 +201,7 @@ export async function chatCompletionMessages(messages, opts = {}) {
   }
   const key = apiKey();
   const url = new URL(`${baseUrl()}/chat/completions`);
+
   const payload = JSON.stringify({
     model: model(),
     messages,
@@ -188,18 +213,25 @@ export async function chatCompletionMessages(messages, opts = {}) {
     ...(key ? { Authorization: `Bearer ${key}` } : {}),
   };
 
+  // CPU inference of the local fallback is slow (~4-8 tok/s) — cap the
+  // fallback's generation budget so a long answer can't stretch to a minute.
+  // The primary (GPU-served cloud) always gets the caller's full budget.
+  const fallbackMaxTokens = Math.min(maxTokens, 220);
+
   /** Local fallback hop (Ollama). Returns a completion or null when unavailable. */
-  const tryLocalFallback = async () => {
+  const tryLocalFallback = async (abortSignal) => {
     const fb = fallbackUrl();
     if (!fb) return null;
+    const signals = [AbortSignal.timeout(fallbackTimeout())];
+    if (abortSignal) signals.push(abortSignal);
     try {
       const r = await fetch(`${fb}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // keep_alive holds the model in RAM so the NEXT fallback is warm
         // (~8s CPU reply instead of ~25s cold load).
-        body: JSON.stringify({ model: fallbackModel(), messages, temperature, max_tokens: maxTokens, keep_alive: "30m" }),
-        signal: AbortSignal.timeout(fallbackTimeout()),
+        body: JSON.stringify({ model: fallbackModel(), messages, temperature, max_tokens: fallbackMaxTokens, keep_alive: "30m" }),
+        signal: AbortSignal.any(signals),
       });
       if (!r.ok) return null;
       const data = await r.json();
@@ -211,65 +243,122 @@ export async function chatCompletionMessages(messages, opts = {}) {
     }
   };
 
-  // Attempt 1 — PLAIN fetch by hostname. undici resolves and sets TLS SNI
-  // from the hostname itself. (The old pre-resolve-then-fetch-by-IP approach
-  // is broken: undici's fetch IGNORES the node-https `agent` option, so the
-  // IP became the SNI -> ERR_TLS_CERT_ALTNAME_INVALID -> "fetch failed".)
-  let res;
-  try {
-    res = await fetch(url.toString(), {
-      method: "POST",
-      headers: baseHeaders,
-      body: payload,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    // Attempt 2 — DNS bypass via classic node:https (which DOES honor
-    // `servername` for SNI). Only for network-level failures; used when the
-    // local resolver can't resolve the host but Google DNS can.
-    const bypass = await fetchViaIpBypass(url, baseHeaders, payload, timeoutMs);
-    if (bypass) {
+  // Circuit breaker open → the primary endpoint is known-dead right now.
+  // Go straight to the local fallback; the breaker re-probes after cooldown.
+  if (breakerOpen()) {
+    const local = await tryLocalFallback();
+    if (local) return local;
+    // No fallback either — surface the documented offline contract.
+    if (!strictReal()) {
+      const last = [...messages].reverse().find((m) => m.role === "user");
+      return {
+        content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+        raw: null,
+        simulated: true,
+      };
+    }
+    throw new Error("LLM_UNREACHABLE: primary provider circuit open and no local fallback responded.");
+  }
+
+  /** Primary chain: plain fetch → DNS bypass. Resolves null on network-level
+   *  failure / 429 / 5xx (recorded in the breaker); throws only on hard
+   *  provider errors (4xx auth/config) that no fallback should mask. */
+  const attemptPrimary = async () => {
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        method: "POST",
+        headers: baseHeaders,
+        body: payload,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      recordPrimaryFailure();
+      // DNS bypass via classic node:https (honors `servername` for SNI), used
+      // when the local resolver can't resolve the host but Google DNS can.
+      // Capped short: the plain fetch already burned the primary budget.
+      const bypass = await fetchViaIpBypass(url, baseHeaders, payload, Math.min(timeoutMs, 4000));
+      if (!bypass) return null;
       res = bypass;
-    } else {
-      // Attempt 3 — LOCAL fallback provider (Ollama). Rides through primary-
-      // provider network outages (observed intermittently with GLM).
-      const local = await tryLocalFallback();
-      if (local) return local;
-      // Network-level failure on every path. Honor the documented
-      // STRICT_REAL=false contract: degrade to the offline demo responder
-      // instead of a bare 502 (trials must survive provider outages).
-      // Provider-level errors (4xx/429/5xx) still throw — those mean GLM answered.
-      if (!strictReal()) {
-        const last = [...messages].reverse().find((m) => m.role === "user");
-        return {
-          content:
-            "[LLM unreachable — offline demo responder] " +
-            (last?.content || "").slice(0, 160),
-          raw: null,
-          simulated: true,
-        };
+    }
+    if (!res.ok) {
+      if (res.status === 429 || res.status >= 500) {
+        recordPrimaryFailure();
+        return null;
       }
-      throw new Error(`LLM_UNREACHABLE: ${err.message || err}. Check your network or the provider status.`);
+      const txt = await res.text().catch(() => "");
+      if (res.status === 429) {
+        throw new Error("LLM_RATE_LIMITED: The GLM API rate limit was hit. Wait a few seconds between requests, or upgrade your plan.");
+      }
+      throw new Error(`LLM ${res.status}: ${txt.slice(0, 200)}`);
     }
-  }
-  if (!res.ok) {
-    // Provider answered but is unhealthy (rate-limited / server error) —
-    // try the local fallback before surfacing the error.
-    if (res.status === 429 || res.status >= 500) {
-      const local = await tryLocalFallback();
-      if (local) return local;
-    }
-    const txt = await res.text().catch(() => "");
-    if (res.status === 429) {
-      throw new Error("LLM_RATE_LIMITED: The GLM API rate limit was hit. Wait a few seconds between requests, or upgrade your plan.");
-    }
-    throw new Error(`LLM ${res.status}: ${txt.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  return {
-    content: data?.choices?.[0]?.message?.content ?? "",
-    raw: data,
+    recordPrimarySuccess();
+    const data = await res.json();
+    return { content: data?.choices?.[0]?.message?.content ?? "", raw: data };
   };
+
+  // HEDGED RACE — the primary is intermittently slow/hung (observed with GLM
+  // from some networks). Waiting out its full timeout before starting the
+  // local fallback doubles every slow reply. Instead: if the primary hasn't
+  // answered within LLM_HEDGE_DELAY_MS, start the local fallback in parallel
+  // and take whichever finishes first; the loser is aborted so a superseded
+  // CPU generation is stopped, not just ignored.
+  if (fallbackUrl()) {
+    const hedgeDelay = parseInt(process.env.LLM_HEDGE_DELAY_MS || "6000", 10);
+    let fallbackAbort = null;
+    let hedgeTimer = null;
+    const primaryP = attemptPrimary();
+    const fallbackP = new Promise((resolve) => {
+      hedgeTimer = setTimeout(() => {
+        fallbackAbort = new AbortController();
+        tryLocalFallback(fallbackAbort.signal).then(resolve, () => resolve(null));
+      }, hedgeDelay);
+    });
+    const winner = await new Promise((resolve) => {
+      let pending = 2; // primary + fallback must both be dead to resolve null
+      const settle = (r) => { if (r) resolve(r); else if (--pending === 0) resolve(null); };
+      primaryP.then(
+        (r) => {
+          // Only a SUCCESSFUL primary cancels the hedge — if the primary is
+          // dead (null) the fallback must be allowed to finish.
+          if (r) { clearTimeout(hedgeTimer); fallbackAbort?.abort(); }
+          settle(r);
+        },
+        (err) => {
+          clearTimeout(hedgeTimer);
+          fallbackAbort?.abort();
+          resolve({ __throw: err });
+        }
+      );
+      fallbackP.then(settle, () => settle(null));
+    });
+    if (winner && winner.__throw) throw winner.__throw;
+    if (winner) return winner;
+    // Every path is dead. Honor the documented STRICT_REAL=false contract:
+    // degrade to the offline demo responder instead of a bare 502.
+    if (!strictReal()) {
+      const last = [...messages].reverse().find((m) => m.role === "user");
+      return {
+        content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+        raw: null,
+        simulated: true,
+      };
+    }
+    throw new Error("LLM_UNREACHABLE: primary provider failed and no local fallback responded.");
+  }
+
+  // No local fallback configured — primary only, offline contract on failure.
+  const direct = await attemptPrimary();
+  if (direct) return direct;
+  if (!strictReal()) {
+    const last = [...messages].reverse().find((m) => m.role === "user");
+    return {
+      content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+      raw: null,
+      simulated: true,
+    };
+  }
+  throw new Error("LLM_UNREACHABLE: primary provider failed. Check your network or the provider status.");
 }
 
 /**
