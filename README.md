@@ -1,68 +1,148 @@
-# 🛡️ Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
+# 🛡️ Dual-Layer AI Firewall — GenAI Security Proxy
 
-A secure proxy that sits in front of an LLM application and defends it on two layers:
+A security proxy that sits in front of any LLM application and inspects every
+prompt and every response in real time:
 
-- **Layer 1 — Semantic AI Firewall** — scans every prompt with regex heuristics + an
-  ML classifier, blocks jailbreaks / prompt injection, and checks responses for
-  exfiltration (tagged to the OWASP LLM Top 10).
-- **Layer 2 — Keystroke Dynamics** — scores each session's trust against a per-user
-  typing baseline, with an MFA fallback during cold start.
+- **Layer 1 — Semantic AI Firewall** — a 7-layer inspection pipeline (regex
+  heuristics → sentiment/weightage → two-tier ML cascade → memory of known
+  attacks → behavioral risk → RAG poisoning checks → policy decision), then
+  the LLM, then output filtering (exfiltration / PII / toxicity). Mapped to
+  the OWASP LLM Top 10 (LLM01 injection, LLMO2/06/08 …).
+- **Layer 2 — Behavioral Zero-Trust Engine** — per-session risk scoring over
+  a Redis-backed event timeline (drift, attack proximity, cumulative risk,
+  injection weightage) that can escalate a gray-zone prompt to RESTRICT or
+  BLOCK even when the classifiers are unsure.
+
+Every verdict is explainable: the dashboard shows *why* a prompt was blocked
+(matched attack vocabulary with weights, word-level sentiment chips, risk
+trend, device/location context from the real public IP).
+
+## Request lifecycle
+
+```
+                    ┌──────────────────────── site door ───────────────────────┐
+ browser dashboard ─▶ proxy :4001  POST /api/chat   (block = 200 + blocked:true) │
+                    │   sanitize → sentiment → cascade → memory → behavioral     │
+                    │   → RAG validate → decision ──┐                            │
+                    └───────────────────────────────┼────────────────────────────┘
+                                                    ▼
+   GLM-4.5-Flash (primary) ──6s hedge──▶ Ollama Qwen2.5 (local fallback) ──▶ offline responder
+                                                    │
+                                                    ▼
+                              output filter (exfil / PII / toxicity) → answer
+                    ┌──────────────────────── API door ────────────────────────┐
+ API consumers ─────▶ firewall :8020  POST /v1/chat/completions (block = 403)   │
+                    │   same pipeline, engine-side, full guardrails JSON        │
+                    └───────────────────────────────────────────────────────────┘
+```
+
+## The inspection pipeline
+
+| # | Layer | What it does |
+|---|---|---|
+| 1 | Sanitizer | strips obfuscation, leetspeak, base64 payloads |
+| 2 | Sentiment / word weightage | lexicon + Qdrant-semantic expansion; gray-zone weightage rule |
+| 3 | Cascade classifier | **fast tier** TF-IDF ensemble (~ms, blocks ≥0.85) → **deep tier** MiniLM + XGBoost |
+| 4 | Attack memory | Qdrant similarity against previously blocked prompts |
+| 5 | Behavioral engine | session risk, drift, attack proximity → escalate gray zone |
+| 6 | RAG validator | drops poisoned retrieved docs (imperative-injection, untrusted source) |
+| 7 | Decision | policy fusion → ALLOW / RESTRICT / BLOCK, with explainability payload |
+
+Post-LLM: regex + semantic output filtering before anything reaches the user.
+
+## LLM routing (built for flaky networks)
+
+Primary (GLM) → **hedged** local fallback: if the primary hasn't answered in
+6 s, Ollama Qwen2.5-3B starts generating *in parallel* and the first to
+finish wins (the loser is aborted). A **circuit breaker** skips a dead
+primary for 2 min after 2 consecutive failures. Worst-case reply ≈ 7 s,
+breaker-open ≈ 1 s. The local model is kept warm (keep_alive + periodic ping).
 
 ## Stack
 
-| Layer | Tech |
+| Tier | Tech |
 |---|---|
-| Client | React + Vite (SecOps dashboard) |
-| Proxy | Node.js + Express (firewall pipeline, SSE) |
-| Engine | Python + FastAPI + scikit-learn (classifier, biometric scoring) |
-| Database | MongoDB |
+| Client | React + Vite — SecOps dashboard, SSE live threat feed, pipeline-scan loading |
+| Proxy | Node.js + Express — Layer-1 pipeline, sessions/WebAuthn step-up, SSE, SSE edge defenses |
+| Engine + v2 API | Python + FastAPI — cascade classifier, behavioral engine, RAG, output filter |
+| Audit store | **PostgreSQL** (audit log, training samples, model versions) |
+| Sessions / behavioral | **Redis** (sliding windows, strikes, timelines) |
+| Vector store | **Qdrant** (attack memory, semantic lexicon, RAG docs) |
+| Read models | MongoDB (alerts, metrics, intel) |
+| LLMs | GLM-4.5-Flash (primary) · Qwen2.5 via Ollama (local fallback) |
 
-## Tier 2 — completion matrix
+## Run it
 
-All Tier-2 epics are delivered and covered by the test suite (`docs/TIER2_TODO.md`
-tracks the detail). Verified against source, not a summary line.
-
-| Epic | Capability | Status | Key files |
-|---|---|---|---|
-| A | Signed sessions + `trustState` | ✅ | `proxy/auth/session.js` |
-| B | FIDO2/WebAuthn step-up MFA | ✅ | `proxy/routes/auth.js`, `client/src/components/StepUpModal.jsx` |
-| C | Llama Guard 4 safety layer (in + out) | ✅ | `proxy/firewall/llamaGuard.js` |
-| D | TLS 1.3 in transit + AES-256-GCM at rest | ✅ | `edge/nginx.conf`, `proxy/db/encryption.js` |
-| E | OS-level Reader-Agent sandbox | ✅ | `reader-svc/`, hardened in `docker-compose.yml` |
-| F | Real Actor tools + RBAC + rate limit/audit | ✅ | `proxy/agents/tools/` |
-| G | Distributed microservices + Redis bus | ✅ | `proxy/app.js`, `proxy/services/`, `docker-compose.micro.yml` |
-| H | XGBoost ensemble parity + per-service CI | ✅ | `engine/biometric/ensemble.py`, `.github/workflows/ci.yml` |
-
-**Firewall latency (PRD §6, <5ms):** heuristics run first and short-circuit a
-confirmed block in enforce mode without the ML/Guard round-trip; classifier
-verdicts are cached per-prompt (`proxy/firewall/clfCache.js`). Malicious and
-repeated/benign paths return sub-millisecond; only a novel benign prompt pays the
-single engine hop.
-
-## Quick start
+**One command (dev):**
 
 ```bash
-cp .env.example .env          # optional: set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
-docker compose up --build
+npm install && npm run install:all   # first time only
+npm run dev                          # engine :8011 + proxy :4001 + dashboard :5174
 ```
 
-Open **http://localhost:8080** (dashboard); the API runs on http://localhost:4000.
-Without an LLM key the firewall still inspects every request and returns a simulated answer.
+(Ctrl-C stops all three.) Start **Docker Desktop** first — it provides
+PostgreSQL `:5436`, Redis `:6379` and Qdrant `:6333`.
 
-## Testing
+**Full stack (Docker):**
 
 ```bash
-cd engine && python -m pytest tests/    # Python engine
-cd proxy  && npm test                   # Node proxy
+docker compose up --build     # dashboard on :8080, API on :4000
 ```
+
+**Zero-downtime blue-green deploy** (what CI/CD ships):
+
+```bash
+deploy/bluegreen/scripts/deploy-bluegreen.sh   # nginx edge :8090, health-gated switch
+```
+
+**v2 API door (reports + API testing):**
+
+```bash
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8020   # run inside the project .venv
+```
+
+## Testing & the test report
+
+```bash
+python -m pytest tests/ -q            # firewall v2 API suite (51 tests)
+cd engine && python -m pytest tests/  # engine suite (15 tests)
+cd proxy && npm test                  # proxy suite (272 tests)
+python scripts/redteam_custom.py      # novel-attack battery (16 attacks + 6 benign, both doors)
+```
+
+Every run is auto-recorded (`data/reports/history.jsonl`) and visualized:
+
+- `GET /reports` — live metrics dashboard (suite runs, battery history, model trend)
+- `GET /reports/testcase` — formal **Test Case Report** (TC ID · Test Case · Input · Expected · Actual · Status)
+- `python scripts/export_report.py` — both as standalone double-clickable HTML (`data/reports/*.html`)
+
+## Model lifecycle
+
+Live traffic is stored as training samples (PostgreSQL). Retraining runs on
+the hybrid corpus with **champion–challenger promotion gates** on both heads —
+a challenger deploys only if it beats (or matches within tolerance) the
+incumbent on a shared holdout; rejected challengers are logged, never served.
+Fast-tier artifacts hot-reload on mtime.
 
 ## Project layout
 
 ```
 dual-layer-firewall/
-├── engine/   Python FastAPI: classifier + biometric scoring
-├── proxy/    Node.js Express firewall proxy
-├── client/   React + Vite dashboard
-├── scripts/  seed + benchmark
-└── docs/     PRD + implementation notes
+├── client/    React + Vite SecOps dashboard
+├── proxy/     Node/Express Layer-1 firewall (routes, heuristics, LLM client)
+├── engine/    FastAPI classifier engine (cascade, embeddings, training)
+├── api/       v2 firewall API (:8020) — 7-layer pipeline + reports
+├── services/  audit log (PG), policy engine, behavioral, LLM routing, report store
+├── guardrails/ decision fusion, memory, behavioral guardrails
+├── train/     retraining + promotion gates
+├── scripts/   runner, red-team battery, report export, benchmarks
+├── deploy/    blue-green compose + nginx edge + health-gated switch
+└── docs/      PRD, implementation plan, deployment readiness, trial manual
 ```
+
+## Configuration
+
+Copy `.env.example` → `.env` (and/or `.env.local`, which wins). Key vars:
+`LLM_BASE_URL / LLM_API_KEY / LLM_MODEL`, `LLM_FALLBACK_URL / _MODEL`,
+`LLM_TIMEOUT_MS`, `LLM_HEDGE_DELAY_MS`, `AUDIT_DSN`, `FIREWALL_MODE`
+(`shadow`/`enforce`), `STRICT_REAL`. See `core/config.py` for precedence.
