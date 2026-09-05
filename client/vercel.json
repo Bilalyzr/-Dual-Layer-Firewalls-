@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "${PROXY_URL}/api/:path*"
+      "destination": "https://dlf-proxy.onrender.com/api/:path*"
     }
   ]
 }
