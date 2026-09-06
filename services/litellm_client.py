@@ -95,7 +95,7 @@ def _fallback_or_offline(prompt: str, context_block: str, chosen: str,
             fb = litellm.completion(
                 model=f"openai/{SETTINGS.llm_fallback_model}",
                 api_base=SETTINGS.llm_fallback_url,
-                api_key="ollama",
+                api_key=SETTINGS.llm_fallback_api_key or "ollama",
                 messages=messages,
                 timeout=SETTINGS.llm_fallback_timeout_s,
                 num_retries=0,

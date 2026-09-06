@@ -54,6 +54,20 @@ services:
         sync: false
       - key: LLM_TIMEOUT_MS
         value: "12000"
+      # ---- Hosted LLM fallback (RECOMMENDED — see DEPLOY.md) ----
+      # open.bigmodel.cn is often unreachable from Render's US datacenters; a
+      # free Groq key gives the live site a fast, always-reachable fallback.
+      # 1) create a free key at console.groq.com
+      # 2) set these three in the Render dashboard (Secrets):
+      #      LLM_FALLBACK_URL      = https://api.groq.com/openai/v1
+      #      LLM_FALLBACK_MODEL    = llama-3.1-8b-instant
+      #      LLM_FALLBACK_API_KEY  = gsk_...
+      - key: LLM_FALLBACK_URL
+        sync: false
+      - key: LLM_FALLBACK_MODEL
+        sync: false
+      - key: LLM_FALLBACK_API_KEY
+        sync: false
       # Keep dlf-engine from idle-sleeping: Render free sleeps services after
       # ~15 min without traffic; the engine's ~50s cold start then shows to
       # visitors as "engine offline" / n-a metrics. A /health ping every 10

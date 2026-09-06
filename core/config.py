@@ -133,6 +133,11 @@ class Settings:
     llm_fallback_timeout_s: float = field(
         default_factory=lambda: _envf("LLM_FALLBACK_TIMEOUT_S", 120.0)
     )
+    # Hosted fallback (e.g. Groq's free OpenAI-compatible tier): the key the
+    # fallback hop authenticates with. Local Ollama needs none.
+    llm_fallback_api_key: str = field(
+        default_factory=lambda: _env("LLM_FALLBACK_API_KEY", "")
+    )
 
     # ---- L7 Egress Output Guardrail ------------------------------------- #
     output_filter_enabled: bool = field(default_factory=lambda: _envb("OUTPUT_FILTER_ENABLED", True))

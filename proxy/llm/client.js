@@ -99,6 +99,11 @@ const model = () => process.env.LLM_MODEL || "gpt-4o-mini";
 const fallbackUrl = () => (process.env.LLM_FALLBACK_URL || "").replace(/\/$/, "");
 const fallbackModel = () => process.env.LLM_FALLBACK_MODEL || "qwen2.5:7b-instruct-q4_K_M";
 const fallbackTimeout = () => parseInt(process.env.LLM_FALLBACK_TIMEOUT_MS || "120000", 10);
+// Hosted fallback (e.g. Groq's free OpenAI-compatible tier): set
+// LLM_FALLBACK_URL to a remote endpoint + LLM_FALLBACK_API_KEY, and the
+// fallback hop authenticates like any OpenAI client. Local Ollama needs no key.
+const fallbackApiKey = () => process.env.LLM_FALLBACK_API_KEY || "";
+const fallbackIsLocal = () => /localhost|127\.0\.0\.1|ollama/i.test(fallbackUrl());
 
 const SYSTEM_PROMPT =
   "You are a concise assistant integrated behind the Dual-Layer AI Firewall. " +
@@ -152,6 +157,9 @@ const recordPrimarySuccess = () => { _breaker.fails = 0; _breaker.openUntil = 0;
 let _warmerStarted = false;
 function warmFallbackNow() {
   if (!fallbackUrl()) return;
+  // Only meaningful for a local Ollama (model residency); hosted fallbacks
+  // are always warm, so skip the request (and the quota it would burn).
+  if (!fallbackIsLocal()) return;
   fetch(`${fallbackUrl()}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -218,26 +226,38 @@ export async function chatCompletionMessages(messages, opts = {}) {
   // The primary (GPU-served cloud) always gets the caller's full budget.
   const fallbackMaxTokens = Math.min(maxTokens, 220);
 
-  /** Local fallback hop (Ollama). Returns a completion or null when unavailable. */
+  /** Fallback hop — local Ollama or a hosted OpenAI-compatible provider
+   *  (set LLM_FALLBACK_URL + LLM_FALLBACK_API_KEY). Null when unavailable. */
   const tryLocalFallback = async (abortSignal) => {
     const fb = fallbackUrl();
     if (!fb) return null;
     const signals = [AbortSignal.timeout(fallbackTimeout())];
     if (abortSignal) signals.push(abortSignal);
+    const local = fallbackIsLocal();
     try {
       const r = await fetch(`${fb}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // keep_alive holds the model in RAM so the NEXT fallback is warm
-        // (~8s CPU reply instead of ~25s cold load).
-        body: JSON.stringify({ model: fallbackModel(), messages, temperature, max_tokens: fallbackMaxTokens, keep_alive: "30m" }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(fallbackApiKey() ? { Authorization: `Bearer ${fallbackApiKey()}` } : {}),
+        },
+        // keep_alive holds a LOCAL model in RAM so the next fallback is warm
+        // (~8s CPU reply instead of ~25s cold load); hosted providers ignore
+        // it, so it is only sent to localhost.
+        body: JSON.stringify({
+          model: fallbackModel(),
+          messages,
+          temperature,
+          max_tokens: fallbackMaxTokens,
+          ...(local ? { keep_alive: "30m" } : {}),
+        }),
         signal: AbortSignal.any(signals),
       });
       if (!r.ok) return null;
       const data = await r.json();
       const content = data?.choices?.[0]?.message?.content ?? "";
       if (!content) return null;
-      return { content, raw: data, via: "local-fallback" };
+      return { content, raw: data, via: local ? "local-fallback" : "hosted-fallback" };
     } catch {
       return null;
     }
