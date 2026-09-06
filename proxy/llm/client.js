@@ -260,26 +260,53 @@ export async function chatCompletionMessages(messages, opts = {}) {
     throw new Error("LLM_UNREACHABLE: primary provider circuit open and no local fallback responded.");
   }
 
-  /** Primary chain: plain fetch → DNS bypass. Resolves null on network-level
-   *  failure / 429 / 5xx (recorded in the breaker); throws only on hard
-   *  provider errors (4xx auth/config) that no fallback should mask. */
+  // Hedge window: how long the primary gets before the local fallback starts
+  // racing it. Shared by the race below and attemptPrimary's breaker logic.
+  const hedgeDelay = parseInt(process.env.LLM_HEDGE_DELAY_MS || "6000", 10);
+
+  /** Primary chain: plain fetch and DNS-bypass fetch raced IN PARALLEL.
+   *  The plain fetch hangs whenever the OS resolver mis-serves the provider
+   *  host (observed with GLM: sequential attempts cost timeout + retry);
+   *  the bypass usually connects instantly — but not always. Racing both
+   *  takes whichever path is healthy on THIS network, right now.
+   *  Resolves null on network-level failure / 429 / 5xx (recorded in the
+   *  breaker); throws only on hard provider errors (4xx) that no fallback
+   *  should mask. */
   const attemptPrimary = async () => {
-    let res;
-    try {
-      res = await fetch(url.toString(), {
-        method: "POST",
-        headers: baseHeaders,
-        body: payload,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch {
+    const startedAt = Date.now();
+    const viaPlain = (async () => {
+      try {
+        return await fetch(url.toString(), {
+          method: "POST",
+          headers: baseHeaders,
+          body: payload,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch {
+        return null;
+      }
+    })();
+    const viaBypass = (async () => {
+      try {
+        // classic node:https honors `servername` for TLS SNI, letting us
+        // connect by a Google-DNS-resolved IPv4 when the local resolver
+        // can't. Capped at 2/3 of the budget so it still beats the clock.
+        return await fetchViaIpBypass(url, baseHeaders, payload, Math.max(2000, Math.floor(timeoutMs * 0.66)));
+      } catch {
+        return null;
+      }
+    })();
+    // First USABLE response wins — a fast failure must not beat a slow
+    // success; only all-failed resolves null.
+    const res = await new Promise((resolve) => {
+      let pending = 2;
+      const settle = (r) => { if (r) resolve(r); else if (--pending === 0) resolve(null); };
+      viaPlain.then(settle, () => settle(null));
+      viaBypass.then(settle, () => settle(null));
+    });
+    if (!res) {
       recordPrimaryFailure();
-      // DNS bypass via classic node:https (honors `servername` for SNI), used
-      // when the local resolver can't resolve the host but Google DNS can.
-      // Capped short: the plain fetch already burned the primary budget.
-      const bypass = await fetchViaIpBypass(url, baseHeaders, payload, Math.min(timeoutMs, 4000));
-      if (!bypass) return null;
-      res = bypass;
+      return null;
     }
     if (!res.ok) {
       if (res.status === 429 || res.status >= 500) {
@@ -292,7 +319,11 @@ export async function chatCompletionMessages(messages, opts = {}) {
       }
       throw new Error(`LLM ${res.status}: ${txt.slice(0, 200)}`);
     }
-    recordPrimarySuccess();
+    // A primary that only answers AFTER the hedge window is effectively dead —
+    // the user already got the fallback answer by then. Slow successes must
+    // not reset the breaker (they would re-arm the slow path on every call);
+    // only a fast success proves the provider is healthy again.
+    if (Date.now() - startedAt <= hedgeDelay * 2) recordPrimarySuccess();
     const data = await res.json();
     return { content: data?.choices?.[0]?.message?.content ?? "", raw: data };
   };
@@ -304,7 +335,6 @@ export async function chatCompletionMessages(messages, opts = {}) {
   // and take whichever finishes first; the loser is aborted so a superseded
   // CPU generation is stopped, not just ignored.
   if (fallbackUrl()) {
-    const hedgeDelay = parseInt(process.env.LLM_HEDGE_DELAY_MS || "6000", 10);
     let fallbackAbort = null;
     let hedgeTimer = null;
     const primaryP = attemptPrimary();
