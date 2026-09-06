@@ -344,47 +344,59 @@ export async function chatCompletionMessages(messages, opts = {}) {
    *  host (observed with GLM: sequential attempts cost timeout + retry);
    *  the bypass usually connects instantly — but not always. Racing both
    *  takes whichever path is healthy on THIS network, right now.
-   *  Resolves null on network-level failure / 429 / 5xx (recorded in the
-   *  breaker); throws only on hard provider errors (4xx) that no fallback
-   *  should mask. */
+   *  Rate limits (429) get a short backoff + ONE retry and never open the
+   *  breaker (limited is not down); other failures resolve null and are
+   *  recorded. */
   const attemptPrimary = async () => {
     const startedAt = Date.now();
-    const viaPlain = (async () => {
-      try {
-        return await fetch(url.toString(), {
-          method: "POST",
-          headers: baseHeaders,
-          body: payload,
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-      } catch {
-        return null;
-      }
-    })();
-    const viaBypass = (async () => {
-      try {
-        // classic node:https honors `servername` for TLS SNI, letting us
-        // connect by a Google-DNS-resolved IPv4 when the local resolver
-        // can't. Capped at 2/3 of the budget so it still beats the clock.
-        return await fetchViaIpBypass(url, baseHeaders, payload, Math.max(2000, Math.floor(timeoutMs * 0.66)));
-      } catch {
-        return null;
-      }
-    })();
-    // First USABLE response wins — a fast failure must not beat a slow
-    // success; only all-failed resolves null.
-    const res = await new Promise((resolve) => {
-      let pending = 2;
-      const settle = (r) => { if (r) resolve(r); else if (--pending === 0) resolve(null); };
-      viaPlain.then(settle, () => settle(null));
-      viaBypass.then(settle, () => settle(null));
-    });
+    const racePrimary = async () => {
+      const viaPlain = (async () => {
+        try {
+          return await fetch(url.toString(), {
+            method: "POST",
+            headers: baseHeaders,
+            body: payload,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+        } catch {
+          return null;
+        }
+      })();
+      const viaBypass = (async () => {
+        try {
+          // classic node:https honors `servername` for TLS SNI, letting us
+          // connect by a Google-DNS-resolved IPv4 when the local resolver
+          // can't. Capped at 2/3 of the budget so it still beats the clock.
+          return await fetchViaIpBypass(url, baseHeaders, payload, Math.max(2000, Math.floor(timeoutMs * 0.66)));
+        } catch {
+          return null;
+        }
+      })();
+      // First USABLE response wins — a fast failure must not beat a slow
+      // success; only all-failed resolves null.
+      return new Promise((resolve) => {
+        let pending = 2;
+        const settle = (r) => { if (r) resolve(r); else if (--pending === 0) resolve(null); };
+        viaPlain.then(settle, () => settle(null));
+        viaBypass.then(settle, () => settle(null));
+      });
+    };
+
+    let res = await racePrimary();
+    if (res && res.status === 429) {
+      // Free-tier rate limit (bursty demo traffic): momentary — back off and
+      // retry once. Still limited after the retry = fall through WITHOUT a
+      // breaker failure, so the next request still tries the provider.
+      await new Promise((r) => setTimeout(r, 1500));
+      res = await racePrimary();
+      if (res && res.status === 429) return null;
+    }
     if (!res) {
       recordPrimaryFailure();
       return null;
     }
     if (!res.ok) {
-      // ANY unhealthy primary answer (429 / 5xx / auth) hands off to the
+      // ANY other unhealthy primary answer (5xx / auth) hands off to the
       // fallback chain — the user gets a real or graceful answer instead of
       // a raw error. The breaker remembers so repeat offenders get skipped.
       recordPrimaryFailure();
