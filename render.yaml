@@ -47,7 +47,7 @@ services:
         sync: false
       # ---- LLM backend (set in dashboard as Secrets) ----
       - key: LLM_BASE_URL
-        value: https://api.z.ai/api/paas/v4
+        value: https://open.bigmodel.cn/api/paas/v4
       - key: LLM_MODEL
         value: glm-4.5-flash
       - key: LLM_API_KEY
