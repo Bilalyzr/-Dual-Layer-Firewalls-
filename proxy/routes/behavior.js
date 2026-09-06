@@ -66,7 +66,23 @@ router.get("/stats", async (req, res) => {
     });
     res.json(await r.json());
   } catch (err) {
-    res.status(502).json({ error: String(err.message || err) });
+    // The dashboard polls this every 5s; a 502 during the engine's Render
+    // cold start would spam the console. Degrade gracefully: an empty-but-
+    // valid stats payload marked degraded — the panel shows zeros and the
+    // next poll (engine awake by then) fills the real numbers.
+    res.json({
+      active_users: 0,
+      active_sessions: 0,
+      low_risk_sessions: 0,
+      medium_risk_sessions: 0,
+      high_risk_sessions: 0,
+      blocked_sessions: 0,
+      total_events: 0,
+      recent_anomalies: [],
+      user_risk_table: [],
+      degraded: true,
+      detail: String(err.message || err),
+    });
   }
 });
 

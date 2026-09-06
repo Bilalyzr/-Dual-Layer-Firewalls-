@@ -60,6 +60,25 @@ function startEngineKeepalive() {
   log.info("engine keepalive started", { everyMs: ms, engine });
 }
 
+/**
+ * Render free tier sleeps the PROXY itself after ~15 min without inbound
+ * traffic too — and a sleeping proxy can't keep the engine awake. Render
+ * injects RENDER_EXTERNAL_URL (the public address); a self-ping every 10 min
+ * counts as inbound traffic and keeps this service (and by extension, via
+ * the engine keepalive, the whole chain) resident.
+ */
+function startSelfKeepalive() {
+  const url = process.env.RENDER_EXTERNAL_URL;
+  const ms = parseInt(process.env.ENGINE_KEEPALIVE_MS || "0", 10);
+  if (!url || !ms) return;
+  const ping = () => fetch(`${url.replace(/\/$/, "")}/api/alerts/status`, {
+    signal: AbortSignal.timeout(120_000), // allow for own cold start
+  }).catch(() => {});
+  setTimeout(ping, 10_000);
+  setInterval(ping, ms);
+  log.info("self keepalive started", { everyMs: ms, url });
+}
+
 export async function startService(role = "all") {
   installProcessGuards();
   // Set at runtime so the orchestrator's recursion guard + the logger/telemetry
@@ -101,6 +120,7 @@ export async function startService(role = "all") {
         startFallbackWarmer();
         ensureServerPublicIp(); // warm the real-IP cache so even the first request displays it
         startEngineKeepalive(); // Render free-tier: keep dlf-engine from idle-sleeping
+        startSelfKeepalive();   // …and keep THIS service awake the same way
       }
       resolve(server);
     });
