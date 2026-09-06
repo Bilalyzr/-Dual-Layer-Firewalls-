@@ -41,6 +41,25 @@ function installProcessGuards() {
   });
 }
 
+/**
+ * Keep the classifier engine awake on hosting tiers that idle-sleep free
+ * services (Render free: ~15 min of inactivity puts dlf-engine to sleep; the
+ * next request then pays a ~50s cold start, which users see as "engine
+ * offline" / n-a metrics). A health ping every ENGINE_KEEPALIVE_MS keeps it
+ * resident while the proxy itself is awake. Off by default (0).
+ */
+function startEngineKeepalive() {
+  const ms = parseInt(process.env.ENGINE_KEEPALIVE_MS || "0", 10);
+  const engine = process.env.ENGINE_URL;
+  if (!ms || !engine) return;
+  const ping = () => fetch(`${engine.replace(/\/$/, "")}/health`, {
+    signal: AbortSignal.timeout(90_000), // engine cold start can take a while
+  }).catch(() => {});
+  setTimeout(ping, 5_000);        // wake it shortly after boot
+  setInterval(ping, ms);
+  log.info("engine keepalive started", { everyMs: ms, engine });
+}
+
 export async function startService(role = "all") {
   installProcessGuards();
   // Set at runtime so the orchestrator's recursion guard + the logger/telemetry
@@ -81,6 +100,7 @@ export async function startService(role = "all") {
       if (role === "all" || role === "gateway") {
         startFallbackWarmer();
         ensureServerPublicIp(); // warm the real-IP cache so even the first request displays it
+        startEngineKeepalive(); // Render free-tier: keep dlf-engine from idle-sleeping
       }
       resolve(server);
     });

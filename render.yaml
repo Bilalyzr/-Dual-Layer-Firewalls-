@@ -53,7 +53,13 @@ services:
       - key: LLM_API_KEY
         sync: false
       - key: LLM_TIMEOUT_MS
-        value: "45000"
+        value: "12000"
+      # Keep dlf-engine from idle-sleeping: Render free sleeps services after
+      # ~15 min without traffic; the engine's ~50s cold start then shows to
+      # visitors as "engine offline" / n-a metrics. A /health ping every 10
+      # minutes keeps it resident while the proxy itself is awake.
+      - key: ENGINE_KEEPALIVE_MS
+        value: "600000"
       # ---- Firewall modes ----
       - key: FIREWALL_MODE
         value: enforce
