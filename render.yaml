@@ -81,6 +81,13 @@ services:
         value: "0.65"
       - key: BIOMETRIC_MODE
         value: shadow
+      # open.bigmodel.cn is unreachable from Render's US datacenters. Until a
+      # hosted fallback key is set (LLM_FALLBACK_* above, e.g. free Groq),
+      # STRICT_REAL=false lets live chat answer via the built-in offline
+      # responder instead of returning 502 — the firewall verdicts are real
+      # either way; only the answer text is the demo responder.
+      - key: STRICT_REAL
+        value: "false"
       # ---- Session secret (set in dashboard as a Secret) ----
       - key: SESSION_SECRET
         sync: false
