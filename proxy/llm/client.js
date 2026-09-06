@@ -175,6 +175,61 @@ export function startFallbackWarmer() {
 }
 
 /**
+ * Lite offline assistant — the deterministic responder used when every LLM
+ * hop is unavailable. Answers common prompts properly (greetings, simple
+ * arithmetic, identity) and otherwise returns a clean, professional reply.
+ * NEVER surfaces scary error text to the user: the message reads like an
+ * assistant, and the `simulated` flag on the result is what marks it.
+ */
+export function offlineReply(prompt, ragDocs = []) {
+  const p = String(prompt || "").trim();
+  const q = p.toLowerCase();
+
+  // Simple arithmetic ("what is 2+2", "calculate 12*7", "100 / 4") — computed.
+  const expr = p.replace(/[^0-9+\-*/().\s]/g, " ").replace(/\bx\b/gi, "*").trim();
+  if (/^[\d+\-*/().\s]+$/.test(expr) && /\d/.test(expr) && /[+\-*/]/.test(expr)) {
+    try {
+      const val = Function(`"use strict";return (${expr})`)();
+      if (Number.isFinite(val)) {
+        const pretty = Number.isInteger(val) ? val : Number(val.toFixed(6));
+        return `${expr.replace(/\s+/g, " ")} = **${pretty}**`;
+      }
+    } catch { /* not arithmetic after all */ }
+  }
+
+  if (/^(hi|hii+|hello|hey|yo|sup|good (morning|afternoon|evening)|vanakkam)\b/i.test(q) && q.length < 40) {
+    return "Hello! I'm the assistant behind the Dual-Layer AI Firewall. Your message passed all seven inspection layers — ask me anything and I'll do my best to help.";
+  }
+  if (/^(thanks|thank you|thx|great|nice|perfect)\b/i.test(q)) {
+    return "You're welcome! Anything else I can help with?";
+  }
+  if (/who are you|what are you|introduce yourself|your name/i.test(q)) {
+    return "I'm the assistant running behind the Dual-Layer AI Firewall — a security proxy that inspects every prompt through seven layers (sanitization, sentiment, ML classification, attack memory, behavioral risk, RAG poisoning checks, and policy decision) before it reaches me, and checks my answers on the way back out.";
+  }
+  if (/what can you do|help me|capabilities/i.test(q)) {
+    return "I can answer questions, do quick calculations, explain concepts, and help draft text — all while the firewall verifies both sides of the conversation. Try asking something, or send a suspicious prompt to watch the security layers respond.";
+  }
+
+  // Graceful general reply — professional tone, no error prefix.
+  const lines = [];
+  lines.push("I received your message and it cleared all seven firewall layers safely.");
+  if (ragDocs && ragDocs.length) {
+    lines.push("");
+    lines.push("From the verified reference context:");
+    for (const d of ragDocs.slice(0, 3)) {
+      lines.push(`- ${String(d).trim().split(".")[0].slice(0, 160)}.`);
+    }
+  }
+  lines.push("");
+  lines.push(
+    `You asked: "${p.slice(0, 140)}${p.length > 140 ? "…" : ""}" — ` +
+      "my full language model is briefly unavailable, so this is a concise local response. " +
+      "Please resend in a moment for the complete answer."
+  );
+  return lines.join("\n");
+}
+
+/**
  * Generate a chat completion from a full messages array — used by the Trifecta
  * agents (Phase 5) to give each role its own system prompt + tunable params.
  *
@@ -272,7 +327,7 @@ export async function chatCompletionMessages(messages, opts = {}) {
     if (!strictReal()) {
       const last = [...messages].reverse().find((m) => m.role === "user");
       return {
-        content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+        content: offlineReply(last?.content || ""),
         raw: null,
         simulated: true,
       };
@@ -389,7 +444,7 @@ export async function chatCompletionMessages(messages, opts = {}) {
     if (!strictReal()) {
       const last = [...messages].reverse().find((m) => m.role === "user");
       return {
-        content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+        content: offlineReply(last?.content || ""),
         raw: null,
         simulated: true,
       };
@@ -403,7 +458,7 @@ export async function chatCompletionMessages(messages, opts = {}) {
   if (!strictReal()) {
     const last = [...messages].reverse().find((m) => m.role === "user");
     return {
-      content: "[LLM unreachable — offline demo responder] " + (last?.content || "").slice(0, 160),
+      content: offlineReply(last?.content || ""),
       raw: null,
       simulated: true,
     };

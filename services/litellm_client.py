@@ -116,16 +116,51 @@ def _fallback_or_offline(prompt: str, context_block: str, chosen: str,
 
 
 def _offline_responder(prompt: str, rag_docs: list[str] | None) -> str:
-    """Deterministic stand-in mirroring the diagram's 200-OK sample answer."""
-    lines = ["Here are safe guidelines to address your question."]
+    """Lite offline assistant (mirrors proxy/llm/client.js offlineReply).
+
+    Deterministic but PROPER: answers greetings, simple arithmetic and
+    identity questions; otherwise a clean professional reply. Never surfaces
+    error-style text to the user.
+    """
+    import re as _re
+
+    p = str(prompt or "").strip()
+    q = p.lower()
+
+    expr = _re.sub(r"[^0-9+\-*/().\s]", " ", p).strip()
+    if _re.fullmatch(r"[\d+\-*/().\s]+", expr) and any(c.isdigit() for c in expr) \
+            and any(c in expr for c in "+-*/"):
+        try:
+            val = eval(expr, {"__builtins__": {}}, {})  # charset-whitelisted above
+            if isinstance(val, (int, float)) and val == val and val not in (float("inf"), float("-inf")):
+                pretty = int(val) if float(val).is_integer() else round(val, 6)
+                return f"{expr} = {pretty}"
+        except Exception:
+            pass
+
+    if _re.match(r"^(hi|hii+|hello|hey|yo|sup|good (morning|afternoon|evening)|vanakkam)\b", q) and len(q) < 40:
+        return ("Hello! I'm the assistant behind the Dual-Layer AI Firewall. "
+                "Your message passed all seven inspection layers — ask me anything "
+                "and I'll do my best to help.")
+    if _re.match(r"^(thanks|thank you|thx|great|nice|perfect)\b", q):
+        return "You're welcome! Anything else I can help with?"
+    if _re.search(r"who are you|what are you|introduce yourself|your name", q):
+        return ("I'm the assistant running behind the Dual-Layer AI Firewall — a security "
+                "proxy that inspects every prompt through seven layers before it reaches "
+                "me, and checks my answers on the way back out.")
+    if _re.search(r"what can you do|help me|capabilities", q):
+        return ("I can answer questions, do quick calculations, explain concepts, and "
+                "help draft text — all while the firewall verifies both sides of the "
+                "conversation. Try asking something, or send a suspicious prompt to "
+                "watch the security layers respond.")
+
+    lines = ["I received your message and it cleared all seven firewall layers safely."]
     if rag_docs:
-        lines.append("")
-        lines.append("Based on verified reference context:")
-        for d in rag_docs[:3]:
-            first = d.strip().split(".")[0][:160]
-            lines.append(f"- {first}.")
-    lines.append("")
-    lines.append(f'Your request ("{prompt[:120]}") was processed through the '
-                 "7-layer GenAI security firewall. No provider credentials are "
-                 "configured, so this is the offline deterministic responder.")
+        lines += ["", "From the verified reference context:"]
+        lines += [f"- {str(d).strip().split('.')[0][:160]}." for d in rag_docs[:3]]
+    snippet = p[:140] + ("…" if len(p) > 140 else "")
+    lines += ["",
+              f'You asked: "{snippet}" — my full language model is briefly unavailable, '
+              "so this is a concise local response. Please resend in a moment for the "
+              "complete answer."]
     return "\n".join(lines)
