@@ -45,11 +45,15 @@ services:
       # MongoDB Atlas connection string — set in dashboard (Secret).
       - key: MONGO_URI
         sync: false
-      # ---- LLM backend (set in dashboard as Secrets) ----
+      # ---- LLM backend: Gemini via its OpenAI-compatible endpoint ----
+      # Free key from https://aistudio.google.com/apikey (Google account, no
+      # card). Globally reachable — works from Render's US datacenters AND
+      # local dev, unlike the GLM China endpoint. Paste the Gemini key into
+      # the LLM_API_KEY secret in the Render dashboard.
       - key: LLM_BASE_URL
-        value: https://open.bigmodel.cn/api/paas/v4
+        value: https://generativelanguage.googleapis.com/v1beta/openai
       - key: LLM_MODEL
-        value: glm-4.5-flash
+        value: gemini-2.5-flash
       - key: LLM_API_KEY
         sync: false
       - key: LLM_TIMEOUT_MS
