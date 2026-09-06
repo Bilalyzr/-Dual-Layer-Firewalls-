@@ -56,8 +56,11 @@ services:
         value: gemini-3.6-flash
       - key: LLM_API_KEY
         sync: false
+      # gemini-3.6-flash is a thinking model — latency varies 3-25s. A real
+      # answer is the priority, so it gets a 30s budget; the circuit breaker
+      # still skips a hard-down provider after 2 consecutive failures.
       - key: LLM_TIMEOUT_MS
-        value: "12000"
+        value: "30000"
       # ---- Hosted LLM fallback (RECOMMENDED — see DEPLOY.md) ----
       # open.bigmodel.cn is often unreachable from Render's US datacenters; a
       # free Groq key gives the live site a fast, always-reachable fallback.
