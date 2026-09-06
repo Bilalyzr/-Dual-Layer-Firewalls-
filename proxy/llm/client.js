@@ -384,15 +384,11 @@ export async function chatCompletionMessages(messages, opts = {}) {
       return null;
     }
     if (!res.ok) {
-      if (res.status === 429 || res.status >= 500) {
-        recordPrimaryFailure();
-        return null;
-      }
-      const txt = await res.text().catch(() => "");
-      if (res.status === 429) {
-        throw new Error("LLM_RATE_LIMITED: The GLM API rate limit was hit. Wait a few seconds between requests, or upgrade your plan.");
-      }
-      throw new Error(`LLM ${res.status}: ${txt.slice(0, 200)}`);
+      // ANY unhealthy primary answer (429 / 5xx / auth) hands off to the
+      // fallback chain — the user gets a real or graceful answer instead of
+      // a raw error. The breaker remembers so repeat offenders get skipped.
+      recordPrimaryFailure();
+      return null;
     }
     // A primary that only answers AFTER the hedge window is effectively dead —
     // the user already got the fallback answer by then. Slow successes must
