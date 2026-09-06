@@ -355,6 +355,17 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         print(f"[retrain-realtime] PROMOTION REJECTED — challenger "
               f"{float(new_acc):.4f} < champion {float(prev_acc):.4f} − 0.01; "
               "keeping the live model")
+        try:  # governance log — surfaces in the Test-Case Report
+            from services.report_store import append_record
+
+            append_record(
+                "model_rejected", tier="deep",
+                challenger_accuracy=new_acc, champion_accuracy=prev_acc,
+                reason="challenger below champion threshold",
+                samples=int(len(texts)),
+            )
+        except Exception:
+            pass
         return {
             "status": "rejected",
             "reason": "challenger below champion threshold",
@@ -477,8 +488,27 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
 
         # yte is engine-encoded (0 = threat); the vote yields 1 = threat.
         yte_cmp = [1 - v for v in yte]
+
+        # Isotonic calibration of the soft-vote: raw ensemble scores are not
+        # true probabilities (LR/SVC/RF margins are over-confident near the
+        # boundary). A monotone fit on the TRAIN split maps the vote to an
+        # honest P(threat) — the deployed calib.joblib is applied at runtime
+        # by EnsembleClassifier. The holdout F1 below is computed WITH the
+        # calibration, so the promotion gate governs it like any challenger.
+        from sklearn.isotonic import IsotonicRegression
+
+        train_scores = _soft_vote(vec, ests, Xtr, threat_class=0)
+        train_threat = [1 - v for v in ytr]  # engine 0=threat -> indicator
+        calib = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+        calib.fit(train_scores, train_threat)
+
+        def _calibrated(scores):
+            import numpy as np
+
+            return np.clip(calib.predict(scores), 0.0, 1.0)
+
         challenger_f1 = f1_score(
-            yte_cmp, (_soft_vote(vec, ests, Xte, threat_class=0) >= 0.5).astype(int),
+            yte_cmp, (_calibrated(_soft_vote(vec, ests, Xte, threat_class=0)) >= 0.5).astype(int),
             average="macro")
 
         incumbent_f1 = None
@@ -496,6 +526,17 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
             print(f"[retrain-realtime] fast tier PROMOTION REJECTED — challenger "
                   f"{challenger_f1:.4f} < incumbent {float(incumbent_f1):.4f} − 0.005; "
                   "keeping the live artifacts")
+            try:  # governance log — surfaces in the Test-Case Report
+                from services.report_store import append_record
+
+                append_record(
+                    "model_rejected", tier="fast",
+                    challenger_f1=round(float(challenger_f1), 4),
+                    champion_f1=round(float(incumbent_f1), 4),
+                    reason="challenger macro-F1 below incumbent threshold",
+                )
+            except Exception:
+                pass
             return {"status": "rejected", "challenger_f1": round(float(challenger_f1), 4),
                     "incumbent_f1": round(float(incumbent_f1), 4)}
 
@@ -503,6 +544,7 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
         joblib.dump(vec, MODEL_DIR / "tfidf.joblib")
         joblib.dump(ests["lr"], MODEL_DIR / "clf.joblib")
         joblib.dump(ests, MODEL_DIR / "clf_ensemble.joblib")
+        joblib.dump(calib, MODEL_DIR / "calib.joblib")
         print(f"[retrain-realtime] fast tier retrained "
               f"({Xv_tr.shape[1]} features, macro-F1 {challenger_f1:.4f} vs "
               f"incumbent {incumbent_f1 if incumbent_f1 is None else round(float(incumbent_f1), 4)}) "

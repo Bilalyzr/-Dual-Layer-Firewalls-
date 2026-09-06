@@ -1148,3 +1148,63 @@ summary:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .pl-chip.active, .pl-bar .pl-scan, .pl-dots i { animation: none; }
 }
+
+/* In-prompt word-verdict highlighting (blocked prompts): negative terms in
+   red, positive in green — intensity scales with the term's weight. */
+mark.hl-n1, mark.hl-n2, mark.hl-n3, mark.hl-p1, mark.hl-p2, mark.hl-p3 {
+  border-radius: 2px; padding: 0 2px; color: inherit; font-weight: 600;
+}
+mark.hl-n1 { background: rgba(255, 56, 96, 0.18); }
+mark.hl-n2 { background: rgba(255, 56, 96, 0.32); color: #ffb3c0; }
+mark.hl-n3 { background: rgba(255, 56, 96, 0.5); color: #ffd7de; }
+mark.hl-p1 { background: rgba(0, 255, 157, 0.14); }
+mark.hl-p2 { background: rgba(0, 255, 157, 0.24); color: #b8ffe3; }
+mark.hl-p3 { background: rgba(0, 255, 157, 0.36); color: #d9fff1; }
+
+/* Provider + latency badge on assistant replies */
+.llm-badge {
+  margin-left: 8px; padding: 1px 7px; border-radius: 3px;
+  font-size: 9.5px; letter-spacing: 0.5px; text-transform: none;
+  color: var(--cyan); border: 1px solid rgba(0, 240, 255, 0.35);
+  background: rgba(0, 240, 255, 0.07); vertical-align: 1px;
+}
+
+/* Firewall-vs-LLM latency split under assistant replies */
+.lat-split { margin-top: 5px; display: flex; align-items: center; gap: 6px; }
+.lat-split i { height: 4px; border-radius: 2px; display: block; }
+.lat-fw  { background: var(--cyan); box-shadow: 0 0 6px rgba(0, 240, 255, 0.4); }
+.lat-llm { background: var(--purple); box-shadow: 0 0 6px rgba(157, 107, 255, 0.4); }
+.lat-txt { font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+
+/* Explainability contribution bars (BehavioralRiskDashboard) */
+.reason-row { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; }
+.reason-ico { flex: 0 0 auto; margin-top: 1px; display: inline-flex; }
+.reason-body { flex: 1 1 auto; min-width: 0; }
+.reason-text { display: block; }
+.reason-bar { display: block; height: 3px; border-radius: 2px; background: rgba(93, 114, 152, 0.2); margin: 3px 0 1px; overflow: hidden; }
+.reason-bar i { display: block; height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+.reason-w { float: right; font-size: 9.5px; color: var(--text-dim); }
+
+/* Trend band legend keys */
+.band-key { display: inline-block; width: 14px; height: 6px; border-radius: 2px; vertical-align: middle; margin-right: 3px; }
+
+/* Threat feed: category filter chips + user drill-down */
+.cat-chip { cursor: pointer; user-select: none; }
+.cat-chip-on { background: rgba(0, 240, 255, 0.12); box-shadow: 0 0 8px rgba(0, 240, 255, 0.25); }
+.feed-filter-note { color: var(--text-dim); margin: 4px 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.feed-filter-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(0, 240, 255, 0.35); border-radius: 3px;
+  padding: 1px 7px; color: var(--cyan); background: rgba(0, 240, 255, 0.07);
+}
+.feed-filter-chip button {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 9px; padding: 0; text-decoration: underline;
+}
+.feed-filter-chip button:hover { color: var(--cyan); }
+.drill-btn {
+  background: rgba(0, 240, 255, 0.07); border: 1px solid rgba(0, 240, 255, 0.35);
+  color: var(--cyan); border-radius: 3px; padding: 2px 8px; font-size: 9.5px;
+  cursor: pointer; letter-spacing: 0.4px;
+}
+.drill-btn:hover { background: rgba(0, 240, 255, 0.16); }

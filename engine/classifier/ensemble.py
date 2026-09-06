@@ -26,6 +26,7 @@ from sklearn.calibration import CalibratedClassifierCV
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 VECT_PATH = MODEL_DIR / "tfidf.joblib"          # shared, same as Tier 1
 ENSEMBLE_PATH = MODEL_DIR / "clf_ensemble.joblib"  # dict of fitted estimators
+CALIB_PATH = MODEL_DIR / "calib.joblib"         # optional isotonic map (vote -> true P(threat))
 THREAT_LABEL = 0
 
 
@@ -51,9 +52,12 @@ class EnsembleClassifier:
         ests = joblib.load(ENSEMBLE_PATH)
         self.estimators = ests
         self.classes_ = ests["lr"].classes_  # all share the same label space
+        # Optional isotonic calibration: raw soft-votes are over-confident
+        # near the boundary; calib.joblib maps them to honest probabilities.
+        self.calibrator = joblib.load(CALIB_PATH) if CALIB_PATH.exists() else None
 
     def predict_proba(self, text: str) -> float:
-        """Soft-voted P(threat)."""
+        """Soft-voted P(threat), isotonic-calibrated when calib.joblib exists."""
         if not text or not text.strip():
             return 0.0
         X = self.vectorizer.transform([text])
@@ -64,7 +68,10 @@ class EnsembleClassifier:
             idx = list(est.classes_).index(THREAT_LABEL)
             probs.append(float(p[idx]))
         # simple mean soft-vote
-        return sum(probs) / len(probs)
+        vote = sum(probs) / len(probs)
+        if self.calibrator is not None:
+            return float(min(1.0, max(0.0, self.calibrator.predict([vote])[0])))
+        return vote
 
 
 _singleton: EnsembleClassifier | None = None
@@ -72,8 +79,11 @@ _MTIME: float = 0.0  # artifact mtime at last load — hot-reload after retrain
 
 
 def _artifacts_mtime() -> float:
+    paths = [VECT_PATH, ENSEMBLE_PATH]
+    if CALIB_PATH.exists():
+        paths.append(CALIB_PATH)
     try:
-        return max(VECT_PATH.stat().st_mtime, ENSEMBLE_PATH.stat().st_mtime)
+        return max(p.stat().st_mtime for p in paths)
     except OSError:
         return 0.0
 

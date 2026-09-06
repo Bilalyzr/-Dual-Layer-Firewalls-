@@ -18,6 +18,16 @@ import { IconAlert, IconCheck } from "./Icons.jsx";
 const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
 
+/**
+ * The engine embeds each reason's real contribution in its text (e.g.
+ * "weightage 92%" for injection weight, "78% of baseline" for deviation).
+ * Extract it so the explainability list can draw true contribution bars.
+ */
+const weightOf = (r) => {
+  const m = String(r).match(/(\d+(?:\.\d+)?)\s*%/);
+  return m ? Math.min(100, parseFloat(m[1])) : null;
+};
+
 export default function BehavioralRiskDashboard({ userId }) {
   const { behavior, connected } = useThreatStream(50);
   const [loading, setLoading] = useState(false);
@@ -194,35 +204,76 @@ export default function BehavioralRiskDashboard({ userId }) {
                 <stop offset="100%" stopColor="rgba(0,240,255,0.02)" />
               </linearGradient>
             </defs>
+            {/* risk-level bands: LOW / MEDIUM / HIGH zones (score axis is
+                0 at the bottom, 100 at the top) */}
+            <rect x="0" y="0"  width="100" height="30" fill="rgba(255,56,96,0.06)" />
+            <rect x="0" y="30" width="100" height="35" fill="rgba(255,204,51,0.05)" />
+            <rect x="0" y="65" width="100" height="35" fill="rgba(0,255,157,0.04)" />
             {/* threshold guide at the block line (80/100) */}
             <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(255,56,96,0.35)" strokeWidth="0.4" strokeDasharray="2 2" />
             {areaPoints && <polygon points={areaPoints} fill="url(#riskArea)" />}
             <polyline points={chartPoints} fill="none" stroke="var(--cyan)" strokeWidth="1.4" />
             {riskHistory.map((p, i) => (
-              <circle
-                key={i}
-                cx={(i / (riskHistory.length - 1)) * 100}
-                cy={100 - p.score}
-                r={p.blocked ? 1.6 : 1.0}
-                fill={p.blocked ? "var(--red)" : "var(--green)"}
-                stroke={p.blocked ? "rgba(255,56,96,0.5)" : "none"}
-                strokeWidth="0.5"
-              />
+              <g key={i}>
+                <circle
+                  cx={(i / (riskHistory.length - 1)) * 100}
+                  cy={100 - p.score}
+                  r={p.blocked ? 1.6 : 1.0}
+                  fill={p.blocked ? "var(--red)" : "var(--green)"}
+                  stroke={p.blocked ? "rgba(255,56,96,0.5)" : "none"}
+                  strokeWidth="0.5"
+                />
+                {/* hover annotation: what this spike was */}
+                <rect
+                  x={Math.max(0, (i / (riskHistory.length - 1)) * 100 - 2)}
+                  y={Math.max(0, 100 - p.score - 2)} width="4" height="4"
+                  fill="transparent"
+                >
+                  <title>{`${p.blocked ? "BLOCKED" : "allowed"} · risk ${p.score}/100 · ${new Date(p.ts).toLocaleTimeString()}`}</title>
+                </rect>
+              </g>
             ))}
           </svg>
+          <div className="muted" style={{ fontSize: 9.5, marginTop: 2, display: "flex", gap: 10 }}>
+            <span><i className="band-key" style={{ background: "rgba(255,56,96,0.35)" }} /> HIGH 70+</span>
+            <span><i className="band-key" style={{ background: "rgba(255,204,51,0.35)" }} /> MEDIUM 35-70</span>
+            <span><i className="band-key" style={{ background: "rgba(0,255,157,0.3)" }} /> LOW</span>
+            <span style={{ color: "var(--red)" }}>● blocked</span>
+            <span style={{ color: "var(--green)" }}>● allowed</span>
+          </div>
         </div>
       )}
 
-      {/* §35 — Explainability */}
+      {/* §35 — Explainability (contribution bars: the engine embeds each
+          reason's real weight in its text, e.g. "weightage 92%") */}
       {latest?.reasons?.length > 0 && (
         <div className="shap-block">
           <div className="shap-title muted small">EXPLAINABILITY</div>
           <ul style={{ listStyle: "none", marginTop: 6 }}>
-            {latest.reasons.map((r, i) => (
-              <li key={i} className="small" style={{ padding: "2px 0", color: r.includes("within baseline") ? "var(--muted)" : color }}>
-                {r.includes("within baseline") ? <IconCheck size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} /> : <IconAlert size={10} style={{ verticalAlign: "-1px", marginRight: 4 }} />}{r}
-              </li>
-            ))}
+            {latest.reasons.map((r, i) => {
+              const w = weightOf(r);
+              const baseline = String(r).includes("within baseline");
+              return (
+                <li key={i} className="small reason-row" style={{ color: baseline ? "var(--muted)" : color }}>
+                  <span className="reason-ico">
+                    {baseline ? <IconCheck size={10} /> : <IconAlert size={10} />}
+                  </span>
+                  <span className="reason-body">
+                    <span className="reason-text">{r}</span>
+                    <span className="reason-bar">
+                      <i
+                        style={{
+                          width: `${w != null ? w : (baseline ? 8 : 20)}%`,
+                          background: baseline ? "var(--muted)" : color,
+                          boxShadow: `0 0 6px ${baseline ? "transparent" : color + "55"}`,
+                        }}
+                      />
+                    </span>
+                    {w != null && <span className="reason-w">{Math.round(w)}%</span>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

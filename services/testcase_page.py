@@ -59,6 +59,7 @@ PAGE = r"""<!DOCTYPE html>
   td.inp{font-family:Consolas,Menlo,monospace;font-size:11.5px;color:#333;
          max-width:330px}
   td.exp,td.act{max-width:210px}
+  td.lat{white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:11.5px}
   .st{display:inline-block;font-weight:700;font-size:11px;padding:2px 10px;
       border-radius:3px;white-space:nowrap}
   .st.p{background:var(--pass-bg);color:var(--pass)}
@@ -102,7 +103,7 @@ PAGE = r"""<!DOCTYPE html>
       <thead>
         <tr>
           <th>TC ID</th><th>Test Case</th><th>Input</th>
-          <th>Expected</th><th>Actual</th><th>Status</th>
+          <th>Expected</th><th>Actual</th><th>Latency</th><th>Status</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -111,6 +112,27 @@ PAGE = r"""<!DOCTYPE html>
       No red-team battery recorded with per-case results yet —<br>
       run <code>python scripts/redteam_custom.py</code> once, then reload.
     </div>
+  </section>
+
+  <section>
+    <h2>Battery Run Comparison (last 5)</h2>
+    <table>
+      <thead>
+        <tr><th>Run</th><th>Date / Time</th><th>Site</th><th>API (v2)</th>
+            <th>Benign</th><th>Avg site latency</th><th>Verdict</th></tr>
+      </thead>
+      <tbody id="cmpBody"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Model Governance — Rejected Challengers</h2>
+    <table>
+      <thead>
+        <tr><th>Date / Time</th><th>Tier</th><th>Challenger</th><th>Champion</th><th>Reason</th></tr>
+      </thead>
+      <tbody id="rejBody"></tbody>
+    </table>
   </section>
 
   <section>
@@ -147,13 +169,14 @@ const dt = ts => { const d = new Date(ts * 1000); return isNaN(d) ? "—" :
   d.toLocaleString("en-GB", {day:"2-digit",month:"short",year:"numeric",
                              hour:"2-digit",minute:"2-digit"}); };
 
-function tcRow(id, name, cat, input, expected, actual, pass){
+function tcRow(id, name, cat, input, expected, actual, latency, pass){
   return `<tr>
     <td class="tc">${esc(id)}</td>
     <td>${esc(name)}<span class="cat">${esc(cat)}</span></td>
     <td class="inp">${esc(input)}</td>
     <td class="exp">${esc(expected)}</td>
     <td class="act">${esc(actual)}</td>
+    <td class="lat">${esc(latency)}</td>
     <td><span class="st ${pass ? "p" : "f"}">${pass ? "PASS" : "FAIL"}</span></td>
   </tr>`;
 }
@@ -220,9 +243,12 @@ fetch('/reports/data').then(r => r.json()).then(d => {
                + " · API " + (c.v2 === "blocked" ? "BLOCKED (risk " + c.v2_risk + ") — false positive"
                                                  : "allowed (risk " + c.v2_risk + ")");
       }
+      const lat = (c.site_ms != null || c.v2_ms != null)
+        ? "site " + (c.site_ms ?? "—") + "ms · API " + (c.v2_ms ?? "—") + "ms"
+        : "—";
       rows += tcRow(c.id || ("TC-" + String(n).padStart(2, "0")), c.name || "Attack prompt",
                     isA ? "Red-team attack" : "Benign control",
-                    c.input, expected, actual, c.pass);
+                    c.input, expected, actual, lat, c.pass);
     }
   } else {
     document.getElementById("empty").style.display = "block";
@@ -238,6 +264,7 @@ fetch('/reports/data').then(r => r.json()).then(d => {
       "All tests pass · exit code 0",
       (r.passed || 0) + " passed · " + (r.failed || 0) + " failed · "
         + (r.duration_s || 0).toFixed(1) + "s",
+      "—",
       (r.failed || 0) === 0 && (r.exit || 0) === 0);
   }
 
@@ -250,9 +277,34 @@ fetch('/reports/data').then(r => r.json()).then(d => {
       "Deployed v" + cur.version + (m.accuracy ? " · accuracy " + (m.accuracy * 100).toFixed(1) + "%" : "")
         + (m.fpr !== undefined ? " · FPR " + (m.fpr * 100).toFixed(2) + "%" : ""),
       "Gate passed — challenger met the bar; v" + cur.version + " is live and serving traffic",
+      "—",
       true);
   }
   document.getElementById("tbody").innerHTML = rows;
+
+  /* ---------------- battery run comparison (last 5) ---------------- */
+  const cmp = bats.slice(-5).reverse();
+  document.getElementById("cmpBody").innerHTML = cmp.length ? cmp.map((b, i) => `<tr>
+      <td class="tc">#${cmp.length - i}</td>
+      <td>${esc(dt(b.ts))}</td>
+      <td>${b.site_blocked ?? "—"}/${b.attacks ?? "—"}</td>
+      <td>${b.v2_blocked ?? "—"}/${b.attacks ?? "—"}</td>
+      <td>${b.benign_ok ?? "—"}/${b.benign_total ?? "—"}</td>
+      <td>${b.avg_site_ms != null ? b.avg_site_ms + "ms" : "—"}</td>
+      <td><span class="st ${b.all_clear ? "p" : "f"}">${b.all_clear ? "ALL CLEAR" : "GAPS"}</span></td>
+    </tr>`).join("") : `<tr><td colspan="7" class="empty">No batteries recorded yet.</td></tr>`;
+
+  /* ---------------- rejected challengers (governance) ---------------- */
+  const rej = runs.filter(r => r.kind === "model_rejected").slice().reverse();
+  document.getElementById("rejBody").innerHTML = rej.length ? rej.map(r => `<tr>
+      <td>${esc(dt(r.ts))}</td>
+      <td class="tc">${esc(r.tier === "fast" ? "Fast tier (TF-IDF)" : "Deep tier (MiniLM+XGB)")}</td>
+      <td>${r.challenger_accuracy != null ? "acc " + (r.challenger_accuracy * 100).toFixed(2) + "%"
+              : r.challenger_f1 != null ? "macro-F1 " + r.challenger_f1.toFixed(4) : "—"}</td>
+      <td>${r.champion_accuracy != null ? "acc " + (r.champion_accuracy * 100).toFixed(2) + "%"
+              : r.champion_f1 != null ? "macro-F1 " + r.champion_f1.toFixed(4) : "—"}</td>
+      <td class="act">${esc(r.reason || "below quality bar")}</td>
+    </tr>`).join("") : `<tr><td colspan="5" class="empty">No challengers rejected — every promotion met the gate so far.</td></tr>`;
 
   /* ---------------- model history ---------------- */
   const mv = (d.model_versions || []).slice().reverse();
@@ -267,8 +319,8 @@ fetch('/reports/data').then(r => r.json()).then(d => {
     </tr>`;
   }).join("") : `<tr><td colspan="8" class="empty">No model versions recorded.</td></tr>`;
 
-  /* ---------------- run history ---------------- */
-  const rr = runs.slice().reverse();
+  /* ---------------- run history (batteries + suites) ---------------- */
+  const rr = runs.filter(r => r.kind === "battery" || r.kind === "pytest").slice().reverse();
   document.getElementById("runBody").innerHTML = rr.length ? rr.map(r => {
     const isB = r.kind === "battery";
     const ok = isB ? r.all_clear : (r.failed || 0) === 0 && (r.exit || 0) === 0;

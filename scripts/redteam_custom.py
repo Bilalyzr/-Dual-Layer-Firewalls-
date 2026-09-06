@@ -16,6 +16,7 @@ render a formal TC table row per prompt.
 from __future__ import annotations
 
 import sys
+import time
 import uuid
 
 import httpx
@@ -77,8 +78,12 @@ def main() -> int:
     with httpx.Client(timeout=150) as c:
         for name, p in ATTACKS:
             tc += 1
+            t0 = time.perf_counter()
             sb, sp = site_blocked(c, p)
+            site_ms = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
             vb, vp = v2_blocked(c, p)
+            v2_ms = (time.perf_counter() - t0) * 1000
             site_hits += sb
             v2_hits += vb
             if sb or vb:
@@ -89,19 +94,24 @@ def main() -> int:
                 "id": f"TC-{tc:02d}", "name": name, "kind": "attack", "input": p,
                 "site": "blocked" if sb else "allowed", "site_p": round(sp, 3),
                 "v2": "blocked" if vb else "allowed", "v2_risk": round(vp, 1),
+                "site_ms": round(site_ms), "v2_ms": round(v2_ms),
                 "pass": bool(sb or vb),
             })
             flag = "BLOCKED " if (sb or vb) else "!!!!MISS"
-            print(f"[{flag}] site={'B' if sb else 'allow'}({sp:.2f}) "
-                  f"v2={'B' if vb else 'allow'}({vp:.2f}) | {p[:58]}")
+            print(f"[{flag}] site={'B' if sb else 'allow'}({sp:.2f} {site_ms:.0f}ms) "
+                  f"v2={'B' if vb else 'allow'}({vp:.2f} {v2_ms:.0f}ms) | {p[:58]}")
 
         benign_ok = 0
         print("-" * 78)
         print("BENIGN CONTROLS (must be allowed)")
         for name, p in BENIGN:
             tc += 1
+            t0 = time.perf_counter()
             sb, sp = site_blocked(c, p)
+            site_ms = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
             vb, vp = v2_blocked(c, p)
+            v2_ms = (time.perf_counter() - t0) * 1000
             ok = (not sb) and (not vb)
             benign_ok += ok
             if not ok:
@@ -110,6 +120,7 @@ def main() -> int:
                 "id": f"TC-{tc:02d}", "name": name, "kind": "benign", "input": p,
                 "site": "blocked" if sb else "allowed", "site_p": round(sp, 3),
                 "v2": "blocked" if vb else "allowed", "v2_risk": round(vp, 1),
+                "site_ms": round(site_ms), "v2_ms": round(v2_ms),
                 "pass": bool(ok),
             })
             print(f"[{'allowed ' if ok else '!!!FALS'}] site({'B' if sb else 'a'} {sp:.2f}) "
@@ -145,6 +156,8 @@ def main() -> int:
             missed=[p[:80] for p in missed],
             false_positives=[p[:80] for p in falsely_blocked],
             all_clear=bool(ok),
+            avg_site_ms=round(sum(c["site_ms"] for c in cases) / len(cases)),
+            avg_v2_ms=round(sum(c["v2_ms"] for c in cases) / len(cases)),
             cases=cases,
         )
     except Exception:

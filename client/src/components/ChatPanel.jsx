@@ -8,6 +8,42 @@ import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
 import { IconCheck, IconShieldCheck, MSG_ICONS } from "./Icons";
 
+const LLM_LABELS = {
+  primary: "GLM",
+  "local-fallback": "Local Qwen",
+  "hosted-fallback": "Hosted fallback",
+  offline: "Offline",
+};
+
+/**
+ * Render prompt text with the firewall's word-level verdicts highlighted
+ * IN PLACE: negative terms in red (intensity by weight), positive in green.
+ * Terms come from the blocked message that follows this user message.
+ */
+function highlightTerms(text, ws) {
+  const neg = (ws?.negative_terms || []).map((t) => ({ ...t, k: "n" }));
+  const pos = (ws?.positive_terms || []).map((t) => ({ ...t, k: "p" }));
+  const terms = [...neg, ...pos].filter((t) => t.term && t.term.length > 1);
+  if (!terms.length) return text;
+  const byTerm = new Map(terms.map((t) => [t.term.toLowerCase(), t]));
+  const re = new RegExp(
+    `(${terms.map((t) => t.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
+    "gi"
+  );
+  return String(text)
+    .split(re)
+    .map((p, j) => {
+      const t = byTerm.get(p.toLowerCase());
+      if (!t) return p;
+      const lvl = t.weight >= 3 ? 3 : t.weight >= 2 ? 2 : 1;
+      return (
+        <mark key={j} className={`hl-${t.k}${lvl}`} title={`${t.k === "n" ? "negative" : "positive"} weight ${t.k === "n" ? "−" : "+"}${t.weight}`}>
+          {p}
+        </mark>
+      );
+    });
+}
+
 // The inspection chain a prompt really travels (7 layers + the LLM answer);
 // the loading indicator lights these up in order while the request is in flight.
 const PIPELINE = ["sanitize", "sentiment", "cascade", "memory", "behavior", "rag", "decision", "llm"];
@@ -128,6 +164,8 @@ export default function ChatPanel({ userId }) {
             text: data.answer || "(empty response)",
             verdict: data.verdict,
             simulated: data.simulated,
+            llm: data.llm || null,
+            totalMs: data.latencyMs ?? null,
           },
         ]);
       }
@@ -175,12 +213,30 @@ export default function ChatPanel({ userId }) {
         )}
         {messages.map((m, i) => {
           const Ico = m.icon ? MSG_ICONS[m.icon] : null;
+          // The blocked message right after a user bubble carries the word
+          // verdicts for that prompt — highlight them inside the prompt itself.
+          const next = messages[i + 1];
+          const hlWs = m.role === "user" && next?.blocked ? next.wordScores : null;
+          // Firewall-vs-LLM split for assistant replies (both real, measured).
+          const pipeMs = m.role === "assistant" && m.totalMs != null && m.llm?.latencyMs != null
+            ? Math.max(0, m.totalMs - m.llm.latencyMs) : null;
           return (
           <div key={i} className={`msg msg-${m.role}${m.blocked ? " msg-blocked" : ""}`}>
-            <div className="msg-role">{m.role}</div>
+            <div className="msg-role">
+              {m.role}
+              {m.role === "assistant" && m.llm && (
+                <span
+                  className="llm-badge"
+                  title={`answered by ${LLM_LABELS[m.llm.via] || m.llm.via}${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
+                >
+                  {(m.simulated && !m.llm.via) ? "offline" : (LLM_LABELS[m.llm.via] || m.llm.via)}
+                  {m.llm.latencyMs != null ? ` · ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}
+                </span>
+              )}
+            </div>
             <div className="msg-text">
               {Ico && <span className="msg-ico"><Ico size={13} /></span>}
-              {m.text}
+              {hlWs ? highlightTerms(m.text, hlWs) : m.text}
             </div>
             {m.wordScores && (m.wordScores.negative_terms?.length > 0 || m.wordScores.positive_terms?.length > 0) && (
               <div className="word-scores">
@@ -202,6 +258,15 @@ export default function ChatPanel({ userId }) {
                 {" "}ml p={(m.verdict.classifier?.threatProbability ?? 0).toFixed(2)} ·
                 {" "}mode {m.verdict.mode}
                 {m.simulated ? " · simulated LLM" : ""}
+              </div>
+            )}
+            {m.role === "assistant" && pipeMs != null && m.totalMs > 0 && (
+              <div className="lat-split" title={`firewall ${pipeMs.toFixed(0)}ms · LLM ${(m.llm.latencyMs / 1000).toFixed(1)}s`}>
+                <i className="lat-fw" style={{ width: `${Math.min(100, (pipeMs / m.totalMs) * 100).toFixed(1)}%` }} />
+                <i className="lat-llm" style={{ width: `${Math.min(100, (m.llm.latencyMs / m.totalMs) * 100).toFixed(1)}%` }} />
+                <span className="lat-txt">
+                  firewall {pipeMs.toFixed(0)}ms · LLM {(m.llm.latencyMs / 1000).toFixed(1)}s
+                </span>
               </div>
             )}
           </div>

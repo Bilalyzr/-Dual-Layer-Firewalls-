@@ -31,6 +31,8 @@ export default function App() {
   });
 
   const [userId, setUserId] = useState(() => localStorage.getItem("dlf.userId") || "");
+  // RiskTable row -> ThreatFeed drill-down (per-user threat filter).
+  const [focusUser, setFocusUser] = useState(null);
 
   // ALL hooks must be called BEFORE any early return (React rules of hooks).
   const [booting, setBooting] = useState(true);
@@ -105,8 +107,8 @@ export default function App() {
         {/* Row 2 — interaction column (left) · flagship analysis column (right) */}
         <div className="col col-left">
           <ChatPanel userId={userId} />
-          <ThreatFeed />
-          <RiskTable />
+          <ThreatFeed focusUser={focusUser} onClearFocus={() => setFocusUser(null)} />
+          <RiskTable onFocusUser={setFocusUser} />
         </div>
         <div className="col col-right">
           <BehavioralRiskDashboard userId={userId} />

@@ -10,7 +10,7 @@ import { IconAlert, IconCheck } from "./Icons.jsx";
 
 const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
 
-export default function RiskTable() {
+export default function RiskTable({ onFocusUser = null }) {
   const { behavior } = useThreatStream(50);
   const [selectedUser, setSelectedUser] = useState(null);
 
@@ -56,7 +56,19 @@ export default function RiskTable() {
                   <tr className="profile-detail-row">
                     <td colSpan={6}>
                       <div className="profile-detail">
-                        <div className="muted small" style={{ marginBottom: 6 }}>BEHAVIORAL PROFILE — {b.user_id}</div>
+                        <div className="muted small" style={{ marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>BEHAVIORAL PROFILE — {b.user_id}</span>
+                          {onFocusUser && (
+                            <button
+                              type="button"
+                              className="drill-btn"
+                              onClick={() => onFocusUser(b.user_id)}
+                              title="show only this user's threats in the Real-Time Threat Feed"
+                            >
+                              filter threat feed
+                            </button>
+                          )}
+                        </div>
                         <div className="profile-grid">
                           <div><span className="muted">Risk Score:</span> {b.risk_score}/100</div>
                           <div><span className="muted">Auth Required:</span> {b.required_authentication || "—"}</div>

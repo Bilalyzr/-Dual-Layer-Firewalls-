@@ -493,6 +493,8 @@ router.post("/", async (req, res) => {
   // LLM call. Both paths return {content, raw} so the outbound check is shared.
   let llmResponse;
   let agentTrace = null;
+  let llmLatencyMs = null;
+  const llmT0 = performance.now(); // surfaced per-message: which provider answered, how fast
   try {
     if (isAgentic(prompt)) {
       const r = await runTrifecta({
@@ -523,6 +525,7 @@ router.post("/", async (req, res) => {
     } else {
       llmResponse = await chatCompletion(prompt);
     }
+    llmLatencyMs = +(performance.now() - llmT0).toFixed(2);
   } catch (err) {
     return res.status(502).json({
       blocked: false,
@@ -619,6 +622,11 @@ router.post("/", async (req, res) => {
       degraded: guardOutput.degraded || false,
     },
     simulated: llmResponse.simulated || false,
+    llm: {
+      via: llmResponse.via || "primary",
+      simulated: llmResponse.simulated || false,
+      latencyMs: llmLatencyMs,
+    },
     agentic: agentTrace !== null,
     agentTrace,
     verdict,

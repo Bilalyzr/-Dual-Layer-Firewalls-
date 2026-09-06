@@ -33,18 +33,25 @@ const CAT_COLORS = {
   LLM10: "#2f7bff",
 };
 
-export default function ThreatFeed() {
+export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
   const { threats, connected } = useThreatStream(40);
   // Operator decision (Epic A): the feed shows the REAL source IP by default so
   // analysts can act on it immediately; the toggle lets them redact for
   // screen-sharing / PII-sensitive contexts.
   const [showIps, setShowIps] = useState(true);
+  // Category filter: click a chip to focus on one OWASP category, click again
+  // (or ALL) to clear. Pairs with the User Risk Table's per-user drill-down.
+  const [catFilter, setCatFilter] = useState(null);
 
   const byCategory = useMemo(() => {
     const m = {};
     for (const t of threats) m[t.category] = (m[t.category] || 0) + 1;
     return Object.entries(m).sort((a, b) => b[1] - a[1]);
   }, [threats]);
+
+  const shown = threats.filter(
+    (t) => (!catFilter || t.category === catFilter) && (!focusUser || t.userId === focusUser)
+  );
 
   return (
     <section className="panel">
@@ -63,17 +70,51 @@ export default function ThreatFeed() {
 
       {byCategory.length > 0 && (
         <div className="cat-bar">
+          <span
+            className={`cat-chip${catFilter == null ? " cat-chip-on" : ""}`}
+            onClick={() => setCatFilter(null)}
+            title="Show all categories"
+          >
+            <b>ALL</b> {threats.length}
+          </span>
           {byCategory.map(([cat, n]) => (
-            <span key={cat} className="cat-chip" style={{ borderColor: CAT_COLORS[cat] }}>
+            <span
+              key={cat}
+              className={`cat-chip${catFilter === cat ? " cat-chip-on" : ""}`}
+              style={{ borderColor: CAT_COLORS[cat] }}
+              onClick={() => setCatFilter(catFilter === cat ? null : cat)}
+              title={`filter by ${cat}`}
+            >
               <b>{cat}</b> {n}
             </span>
           ))}
         </div>
       )}
 
+      {(focusUser || catFilter) && (
+        <div className="feed-filter-note small">
+          filtered:
+          {focusUser && (
+            <span className="feed-filter-chip">
+              user <b>{focusUser}</b>
+              {onClearFocus && (
+                <button type="button" onClick={onClearFocus} title="clear user filter">clear</button>
+              )}
+            </span>
+          )}
+          {catFilter && (
+            <span className="feed-filter-chip">
+              category <b>{catFilter}</b>
+              <button type="button" onClick={() => setCatFilter(null)} title="clear category filter">clear</button>
+            </span>
+          )}
+          <span className="muted"> · {shown.length} shown</span>
+        </div>
+      )}
+
       <ul className="feed">
-        {threats.length === 0 && <li className="muted">No threats detected yet.</li>}
-        {threats.map((t, i) => {
+        {shown.length === 0 && <li className="muted">{threats.length === 0 ? "No threats detected yet." : "No threats match the current filter."}</li>}
+        {shown.map((t, i) => {
           const cat = t.category || "LLM01";
           const ts = t.ts ? new Date(t.ts) : null;
           const clientIp = t.forensics?.clientIp;
