@@ -624,6 +624,7 @@ router.post("/", async (req, res) => {
     simulated: llmResponse.simulated || false,
     llm: {
       via: llmResponse.via || "primary",
+      model: llmResponse?.raw?.model || null,
       simulated: llmResponse.simulated || false,
       latencyMs: llmLatencyMs,
     },

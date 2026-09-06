@@ -9,10 +9,16 @@ import StepUpModal from "./StepUpModal";
 import { IconCheck, IconShieldCheck, MSG_ICONS } from "./Icons";
 
 const LLM_LABELS = {
-  primary: "GLM",
   "local-fallback": "Local Qwen",
   "hosted-fallback": "Hosted fallback",
   offline: "Offline",
+};
+// Primary answers show the REAL model the provider reports (e.g.
+// "gemini-3.6-flash", "glm-4.5-flash") — never a hardcoded name.
+const llmBadgeLabel = (llm, simulated) => {
+  if (simulated && !llm?.via) return "offline";
+  if (!llm?.via || llm.via === "primary") return llm?.model || "LLM";
+  return LLM_LABELS[llm.via] || llm.via;
 };
 
 /**
@@ -227,9 +233,9 @@ export default function ChatPanel({ userId }) {
               {m.role === "assistant" && m.llm && (
                 <span
                   className="llm-badge"
-                  title={`answered by ${LLM_LABELS[m.llm.via] || m.llm.via}${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
+                  title={`answered by ${llmBadgeLabel(m.llm, m.simulated)}${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
                 >
-                  {(m.simulated && !m.llm.via) ? "offline" : (LLM_LABELS[m.llm.via] || m.llm.via)}
+                  {llmBadgeLabel(m.llm, m.simulated)}
                   {m.llm.latencyMs != null ? ` · ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}
                 </span>
               )}
