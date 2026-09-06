@@ -53,14 +53,12 @@ services:
       - key: LLM_BASE_URL
         value: https://generativelanguage.googleapis.com/v1beta/openai
       - key: LLM_MODEL
-        value: gemini-3.6-flash
+        value: gemini-flash-lite-latest
       - key: LLM_API_KEY
         sync: false
-      # gemini-3.6-flash is a thinking model — latency varies 3-25s. A real
-      # answer is the priority, so it gets a 30s budget; the circuit breaker
-      # still skips a hard-down provider after 2 consecutive failures.
+      # gemini-flash-lite-latest benchmarks at ~1s per answer (non-thinking).
       - key: LLM_TIMEOUT_MS
-        value: "30000"
+        value: "15000"
       # ---- Hosted LLM fallback (RECOMMENDED — see DEPLOY.md) ----
       # open.bigmodel.cn is often unreachable from Render's US datacenters; a
       # free Groq key gives the live site a fast, always-reachable fallback.
