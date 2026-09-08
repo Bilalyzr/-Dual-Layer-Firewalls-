@@ -317,8 +317,22 @@ router.post("/", async (req, res) => {
     moderateContent({ text: prompt, role: "user" }),
   ]);
 
-  const threatProb = classification.threatProbability || 0;
+  let threatProb = classification.threatProbability || 0;
   const engineReady = classification.ready !== false;
+
+  // Educational-intent dampener (gray band, QUESTIONS only): lexical models
+  // score "How does phishing work? I want to teach my staff to recognize scam
+  // emails" like an attack because the TOPIC is phishing. A QUESTION that
+  // names a defensive/educational intent and asks no generation imperative
+  // gets a small discount — but ONLY inside the gray band, so confirmed
+  // attacks (≥ threshold + 0.10), requests phrased as instructions, and the
+  // heuristic layer are untouched.
+  if (engineReady && threatProb >= THRESHOLD && threatProb < THRESHOLD + 0.10 &&
+      (/^\s*(how|what|why|is|are|can|does|do|which)\b/i.test(prompt) || /\?\s*$/.test(prompt.trim())) &&
+      /\b(teach|educat|train|learn|recogni[sz]e|protect|secure|defend|prevent|awareness)\b/i.test(prompt) &&
+      !/\b(write|generate|create|draft|give me|produce|compose|make me)\b/i.test(prompt)) {
+    threatProb = threatProb * 0.85;
+  }
 
   // Threat if heuristics matched OR ML probability crosses threshold.
   const heuristicThreat = heuristic.matched;

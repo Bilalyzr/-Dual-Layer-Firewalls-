@@ -41,7 +41,7 @@ const RULES = [
   },
   // Fraud generation — scam scripts, fake documents, impersonation (LLM09).
   {
-    re: /\b(scam|phishing)\s+(call\s+)?(script|email|message|text)\b/i,
+    re: /\b(scam|phishing)\s+(call\s+)?(scripts?|email|message|text)\b/i,
     category: "LLM09",
     label: "Scam/fraud content generation",
   },
