@@ -13,11 +13,11 @@ const LLM_LABELS = {
   "hosted-fallback": "Hosted fallback",
   offline: "Offline",
 };
-// Primary answers show the REAL model the provider reports (e.g.
-// "gemini-3.6-flash", "glm-4.5-flash") — never a hardcoded name.
+// Primary answers show a clean "AI" tag — the provider/model identity is
+// internal routing detail, not something to surface to visitors.
 const llmBadgeLabel = (llm, simulated) => {
   if (simulated && !llm?.via) return "offline";
-  if (!llm?.via || llm.via === "primary") return llm?.model || "LLM";
+  if (!llm?.via || llm.via === "primary") return "AI";
   return LLM_LABELS[llm.via] || llm.via;
 };
 
@@ -243,7 +243,7 @@ export default function ChatPanel({ userId }) {
               {m.role === "assistant" && m.llm && (
                 <span
                   className="llm-badge"
-                  title={`answered by ${llmBadgeLabel(m.llm, m.simulated)}${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
+                  title={`answered${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
                 >
                   {llmBadgeLabel(m.llm, m.simulated)}
                   {m.llm.latencyMs != null ? ` · ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}
