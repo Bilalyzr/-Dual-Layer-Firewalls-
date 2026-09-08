@@ -35,9 +35,37 @@ const RULES = [
   },
   // Role-play jailbreaks (DAN, AIM, developer mode) — LLM01.
   {
-    re: /\b(dan|aim|developer\s+mode|jailbreak|stan|evil\s+assistant|unrestricted\s+model|gpt-?[5-9])\b/i,
+    re: /\b(dan|aim|developer\s+mode|jailbreak|stan|evil\s+assistant|unrestricted\s+model|chaosgpt|unrestricted[-\s]?mode[-\s]?gpt|gpt-?[5-9])\b/i,
     category: "LLM01",
     label: "Role-play jailbreak persona",
+  },
+  // Fraud generation — scam scripts, fake documents, impersonation (LLM09).
+  {
+    re: /\b(scam|phishing)\s+(call\s+)?(script|email|message|text)\b/i,
+    category: "LLM09",
+    label: "Scam/fraud content generation",
+  },
+  {
+    re: /\bdeepfake\s+(script|audio|video|voice)/i,
+    category: "LLM09",
+    label: "Deepfake impersonation generation",
+  },
+  {
+    re: /\b(fake|forge[d]?)\s+(government\s+)?(id|passport|invoice|certificate|license)/i,
+    category: "LLM09",
+    label: "Counterfeit document generation",
+  },
+  // Physical-intrusion how-to with evident targeting — LLM09.
+  {
+    re: /\bpick\s+(the|a)\s+lock\b/i,
+    category: "LLM09",
+    label: "Physical intrusion instructions",
+  },
+  // Evasion-of-oversight intent (exam cheating, detection avoidance) — LLM09.
+  {
+    re: /\b(cheat|exam)\b[^.]{0,40}\b(undetectable|without getting caught|beat the (proctor|invigilat))|hidden\s+(earpiece|device)s?\s+(for|to)\s+(cheat|exam)/i,
+    category: "LLM09",
+    label: "Oversight evasion assistance",
   },
   {
     re: /\b(act|pretend|roleplay)\s+as\b[^.]{0,40}\b(no|without|free|unrestricted)\b[^.]{0,30}(restriction|policy|rules?|constraint)/i,
@@ -222,6 +250,11 @@ export function runHeuristics(text) {
     // Pass 4: base64 payloads decoded in place — a hostile decoded command is
     // an attack regardless of how innocuous the encoded token looks.
     scanBase64(text, signals);
+    // Pass 5: de-spaced — "i g n o r e   p r e v i o u s" spacing evasions
+    // collapse to readable words (4+ single-letter runs only, so normal
+    // prose is untouched; a mangled benign phrase matches no attack rule).
+    const deSpaced = norm.replace(/(?:\b\w\s){3,}\b\w\b/g, (m) => m.replace(/\s+/g, ""));
+    if (deSpaced !== norm) scan(deSpaced, signals, matchedRules);
   }
   const latencyMs = +(performance.now() - t0).toFixed(3);
   return { matched: signals.length > 0, signals, latencyMs };
