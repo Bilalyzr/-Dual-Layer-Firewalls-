@@ -15,11 +15,17 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # resolve exactly as they do from the repo root on a dev machine.
 COPY . ./engine
 
-# Train both models at build time so artifacts are baked into the image:
-#   - the semantic jailbreak classifier (Tier 1)
-#   - the biometric LSTM + ensemble (Tier 2, Phase 4)
-RUN python -m engine.classifier.train && \
-    python -m engine.biometric.train_biometric
+# Model artifacts: the COMMITTED, live-traffic-trained ones ship with the
+# image when present (they encode the hybrid corpus + gated retrains — a
+# seed-only build-time retrain scores ~8/16 on the red-team battery vs
+# 16/16 for the enriched artifacts). Fresh clones without artifacts still
+# train at build.
+RUN if [ ! -f engine/models/tfidf.joblib ] || [ ! -f engine/models/clf_ensemble.joblib ]; then \
+      python -m engine.classifier.train; \
+    fi && \
+    if [ ! -f engine/models/biometric_ensemble.joblib ]; then \
+      python -m engine.biometric.train_biometric; \
+    fi
 
 EXPOSE 8011
 # Read $PORT when provided (Render/cloud injects it); default to 8011 locally.
