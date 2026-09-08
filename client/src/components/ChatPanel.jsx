@@ -81,12 +81,13 @@ export default function ChatPanel({ userId }) {
     return () => clearInterval(t);
   }, [busy]);
 
-  const send = async (override) => {
+  const send = async (override, _isRetry = false) => {
     const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy) return;
     setBusy(true);
-    if (text !== pendingPrompt) setMessages((m) => [...m, { role: "user", text }]);
+    if (!_isRetry && text !== pendingPrompt) setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
+    let scheduleRetry = false;
     try {
       const res = await apiFetch(
         "/api/chat",
@@ -176,9 +177,18 @@ export default function ChatPanel({ userId }) {
         ]);
       }
     } catch (err) {
-      setMessages((m) => [...m, { role: "system", text: `network error: ${err.message}`, icon: "alert" }]);
+      // Cold-start tolerance: if the API was asleep (free-tier hosting wakes
+      // on first hit), the request fails at network level — retry ONCE after
+      // a beat instead of surfacing an error to the user.
+      const networkLevel = !(err instanceof Error) || /fetch|network|Failed to fetch/i.test(err.message || "");
+      if (networkLevel && !_isRetry) scheduleRetry = true;
+      else setMessages((m) => [...m, { role: "system", text: `network error: ${err.message}`, icon: "alert" }]);
     } finally {
-      setBusy(false);
+      if (!scheduleRetry) setBusy(false);
+    }
+    if (scheduleRetry) {
+      setMessages((m) => [...m, { role: "system", text: "Waking the API — retrying…", icon: "clock" }]);
+      setTimeout(() => send(text, true), 2500);
     }
   };
 

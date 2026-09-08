@@ -6,7 +6,7 @@
  * The old keystroke/mouse/touch biometric system is removed from the live UI
  * (files preserved on disk for tests + future Phase 4 optional signals).
  */
-import { useState, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { ensureSession } from "./lib/api";
 import { collectFingerprint, sendFingerprint } from "./lib/fingerprint";
 import { hasConsent, loadConsent } from "./lib/consent";
@@ -22,7 +22,7 @@ import LoginScreen from "./components/LoginScreen.jsx";
 import BehavioralRiskDashboard from "./components/BehavioralRiskDashboard.jsx";
 import RiskSummary from "./components/RiskSummary.jsx";
 import RiskTable from "./components/RiskTable.jsx";
-import FaceAuthModal from "./components/FaceAuthModal.jsx";
+const FaceAuthModal = lazy(() => import("./components/FaceAuthModal.jsx")); // tfjs stays out of the main bundle
 
 export default function App() {
   const [authUser, setAuthUser] = useState(() => {
@@ -42,6 +42,10 @@ export default function App() {
     if (!authUser) return;
     ensureSession(userId).catch(() => {});
     resolvePublicIp().catch(() => {});
+    // Wake the API the moment the dashboard opens (Render free tier idles
+    // the proxy after ~15 quiet minutes) so the user's FIRST click isn't
+    // the one paying the cold start. Fire-and-forget.
+    fetch("/api/metrics", { signal: AbortSignal.timeout(60_000) }).catch(() => {});
   }, [userId, authUser]);
 
   useEffect(() => {
@@ -122,12 +126,14 @@ export default function App() {
       </footer>
 
       {faceModal && (
-        <FaceAuthModal
-          mode={faceModal}
-          userId={userId}
-          onVerified={() => setFaceModal(null)}
-          onCancel={() => setFaceModal(null)}
-        />
+        <Suspense fallback={null}>
+          <FaceAuthModal
+            mode={faceModal}
+            userId={userId}
+            onVerified={() => setFaceModal(null)}
+            onCancel={() => setFaceModal(null)}
+          />
+        </Suspense>
       )}
     </>
   );

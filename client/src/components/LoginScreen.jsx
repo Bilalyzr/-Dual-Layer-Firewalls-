@@ -8,8 +8,11 @@
  *   4. If NOT enrolled → force face enrollment before entering dashboard
  *   5. If enrolled → go straight to dashboard
  */
-import { useState } from "react";
-import FaceAuthModal from "./FaceAuthModal";
+import { Suspense, lazy, useState } from "react";
+
+// face-api.js bundles TensorFlow.js (~600KB) — load it only when the face
+// modal actually opens, so first paint never pays for it.
+const FaceAuthModal = lazy(() => import("./FaceAuthModal"));
 import { IconAlert, IconBan, IconCheck, IconKey, IconShield, IconUser } from "./Icons.jsx";
 
 export default function LoginScreen({ onLogin }) {
@@ -88,25 +91,27 @@ export default function LoginScreen({ onLogin }) {
             </div>
           )}
           {isLocalhost && (
-            <FaceAuthModal
-              mode="enroll"
-              userId={username}
-              onVerified={() => {
-                setPendingUser(null);
-                onLogin?.(pendingUser);
-              }}
-              onCancel={() => {
-                // Allow skip for now (in production this would block)
-                setPendingUser(null);
-                onLogin?.(pendingUser);
-              }}
-              onSkip={() => {
-                // User chose to defer face enrollment — proceed to dashboard.
-                // They can enroll later from the topbar ENROLL FACE button.
-                setPendingUser(null);
-                onLogin?.(pendingUser);
-              }}
-            />
+            <Suspense fallback={<div className="muted small" style={{ marginTop: 12 }}>Loading face module…</div>}>
+              <FaceAuthModal
+                mode="enroll"
+                userId={username}
+                onVerified={() => {
+                  setPendingUser(null);
+                  onLogin?.(pendingUser);
+                }}
+                onCancel={() => {
+                  // Allow skip for now (in production this would block)
+                  setPendingUser(null);
+                  onLogin?.(pendingUser);
+                }}
+                onSkip={() => {
+                  // User chose to defer face enrollment — proceed to dashboard.
+                  // They can enroll later from the topbar ENROLL FACE button.
+                  setPendingUser(null);
+                  onLogin?.(pendingUser);
+                }}
+              />
+            </Suspense>
           )}
           {!isLocalhost && (
             <button className="btn" onClick={() => { setPendingUser(null); onLogin?.(pendingUser); }}
