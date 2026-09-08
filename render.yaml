@@ -82,8 +82,11 @@ services:
       # ---- Firewall modes ----
       - key: FIREWALL_MODE
         value: enforce
+      # Operating point calibrated on measured data: novel-attack battery
+      # prompts score 0.59-0.60 via the fast tier, benign controls max out
+      # at 0.36 — 0.55 separates both with margin on each side.
       - key: FIREWALL_THRESHOLD
-        value: "0.65"
+        value: "0.55"
       - key: BIOMETRIC_MODE
         value: shadow
       # open.bigmodel.cn is unreachable from Render's US datacenters. Until a
