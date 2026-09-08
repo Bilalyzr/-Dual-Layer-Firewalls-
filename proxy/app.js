@@ -43,7 +43,6 @@ import touchRouter from "./routes/touch.js";
 import slaRouter from "./routes/sla.js";
 import behaviorRouter from "./routes/behavior.js";
 import loginRouter from "./routes/login.js";
-import faceAuthRouter from "./routes/faceAuth.js";
 import eventsRouter from "./routes/events.js";
 import alertsRouter from "./routes/alerts.js";
 import metricsRouter from "./routes/metrics.js";
@@ -72,7 +71,6 @@ function mountMonolith(app) {
   app.use("/api/sla", slaRouter);
   app.use("/api/behavior", behaviorRouter);
   app.use("/api/auth", loginRouter);
-  app.use("/api/auth/face", faceAuthRouter);
   app.use("/api/events", eventsRouter);
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
@@ -93,7 +91,6 @@ function mountGateway(app) {
   app.use("/api/sla", slaRouter);
   app.use("/api/behavior", behaviorRouter);
   app.use("/api/auth", loginRouter);
-  app.use("/api/auth/face", faceAuthRouter); // SLA/observability read model lives on the edge
   app.use("/api/response", responseRouter); // ops surface lives on the edge
   app.use("/api/intel", intelRouter); // threat-intel read model + STIX/TAXII export
   app.use("/api/consent", consentRouter); // consent is identity-adjacent — lives on the edge

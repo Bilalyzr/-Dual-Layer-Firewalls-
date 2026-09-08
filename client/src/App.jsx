@@ -6,7 +6,7 @@
  * The old keystroke/mouse/touch biometric system is removed from the live UI
  * (files preserved on disk for tests + future Phase 4 optional signals).
  */
-import { Suspense, lazy, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ensureSession } from "./lib/api";
 import { collectFingerprint, sendFingerprint } from "./lib/fingerprint";
 import { hasConsent, loadConsent } from "./lib/consent";
@@ -22,7 +22,6 @@ import LoginScreen from "./components/LoginScreen.jsx";
 import BehavioralRiskDashboard from "./components/BehavioralRiskDashboard.jsx";
 import RiskSummary from "./components/RiskSummary.jsx";
 import RiskTable from "./components/RiskTable.jsx";
-const FaceAuthModal = lazy(() => import("./components/FaceAuthModal.jsx")); // tfjs stays out of the main bundle
 
 export default function App() {
   const [authUser, setAuthUser] = useState(() => {
@@ -36,7 +35,6 @@ export default function App() {
 
   // ALL hooks must be called BEFORE any early return (React rules of hooks).
   const [booting, setBooting] = useState(true);
-  const [faceModal, setFaceModal] = useState(null); // null | "enroll" | "verify"
 
   useEffect(() => {
     if (!authUser) return;
@@ -125,16 +123,6 @@ export default function App() {
         DUAL-LAYER AI FIREWALL
       </footer>
 
-      {faceModal && (
-        <Suspense fallback={null}>
-          <FaceAuthModal
-            mode={faceModal}
-            userId={userId}
-            onVerified={() => setFaceModal(null)}
-            onCancel={() => setFaceModal(null)}
-          />
-        </Suspense>
-      )}
     </>
   );
 }

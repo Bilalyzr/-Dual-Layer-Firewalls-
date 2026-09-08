@@ -1,18 +1,10 @@
 /**
- * LoginScreen — login form with behavioral risk analysis + mandatory face enrollment.
+ * LoginScreen — login form with behavioral risk analysis.
  *
- * Flow:
- *   1. User enters credentials → behavioral risk analysis runs
- *   2. If LOW/MEDIUM → login succeeds
- *   3. After login → check if face is enrolled
- *   4. If NOT enrolled → force face enrollment before entering dashboard
- *   5. If enrolled → go straight to dashboard
+ * Flow: user enters credentials → behavioral risk analysis runs →
+ * LOW/MEDIUM risk logs in, HIGH is rejected with the risk breakdown.
  */
-import { Suspense, lazy, useState } from "react";
-
-// face-api.js bundles TensorFlow.js (~600KB) — load it only when the face
-// modal actually opens, so first paint never pays for it.
-const FaceAuthModal = lazy(() => import("./FaceAuthModal"));
+import { useState } from "react";
 import { IconAlert, IconBan, IconCheck, IconKey, IconShield, IconUser } from "./Icons.jsx";
 
 export default function LoginScreen({ onLogin }) {
@@ -21,7 +13,6 @@ export default function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
-  const [pendingUser, setPendingUser] = useState(null); // user waiting for face enrollment
 
   const submit = async (e) => {
     e.preventDefault();
@@ -48,13 +39,6 @@ export default function LoginScreen({ onLogin }) {
       setResult(data);
 
       if (data.success) {
-        // Face auth is temporarily disabled — go straight to the dashboard.
-        // To re-enable: uncomment the face-status check below.
-        // try {
-        //   const faceRes = await fetch(`/api/auth/face/status/${username}`);
-        //   const faceData = await faceRes.json();
-        //   if (!faceData.enrolled) { setPendingUser(data); return; }
-        // } catch { /* allow anyway */ }
         onLogin?.(data);
       }
     } catch (err) {
@@ -68,61 +52,6 @@ export default function LoginScreen({ onLogin }) {
     : result?.behavioral?.risk_level === "MEDIUM" ? "#ffcc33" : "#00ff9d";
 
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-  // If user needs to enroll face — show the FaceAuthModal
-  if (pendingUser) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-        <div className="panel" style={{ width: 400, maxWidth: "90vw", textAlign: "center" }}>
-          <div style={{ marginBottom: 8, color: "var(--cyan)" }}><IconUser size={32} /></div>
-          <h2 style={{ fontSize: 14, letterSpacing: 1, textTransform: "uppercase" }}>Face Enrollment Required</h2>
-          <p className="muted small" style={{ marginTop: 8 }}>
-            New users must enroll their face for authentication.
-            This is a mandatory security step.
-          </p>
-          {!isLocalhost && (
-            <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "rgba(255,56,96,0.1)", border: "1px solid rgba(255,56,96,0.3)" }}>
-              <div className="small" style={{ color: "#ff3860" }}>
-                <IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} /> Camera requires <b>localhost</b> or HTTPS. You're on {window.location.hostname}.
-              </div>
-              <div className="muted small" style={{ marginTop: 4 }}>
-                Open <code>http://localhost:5174</code> instead of the IP address.
-              </div>
-            </div>
-          )}
-          {isLocalhost && (
-            <Suspense fallback={<div className="muted small" style={{ marginTop: 12 }}>Loading face module…</div>}>
-              <FaceAuthModal
-                mode="enroll"
-                userId={username}
-                onVerified={() => {
-                  setPendingUser(null);
-                  onLogin?.(pendingUser);
-                }}
-                onCancel={() => {
-                  // Allow skip for now (in production this would block)
-                  setPendingUser(null);
-                  onLogin?.(pendingUser);
-                }}
-                onSkip={() => {
-                  // User chose to defer face enrollment — proceed to dashboard.
-                  // They can enroll later from the topbar ENROLL FACE button.
-                  setPendingUser(null);
-                  onLogin?.(pendingUser);
-                }}
-              />
-            </Suspense>
-          )}
-          {!isLocalhost && (
-            <button className="btn" onClick={() => { setPendingUser(null); onLogin?.(pendingUser); }}
-              style={{ width: "100%", marginTop: 12, opacity: 0.5, fontSize: 10 }}>
-              Skip for now (camera needs localhost)
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
@@ -149,9 +78,6 @@ export default function LoginScreen({ onLogin }) {
 
         <div className="muted small" style={{ marginTop: 12, textAlign: "center" }}>
           Demo: admin / admin123 · analyst / sec123 · demo / demo
-        </div>
-        <div className="muted small" style={{ textAlign: "center", marginTop: 4 }}>
-          New users will be asked to enroll their face <IconKey size={12} style={{ verticalAlign: "-2px" }} />
         </div>
 
         {result && !result.success && (
