@@ -6,21 +6,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install deps first for layer caching.
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Install deps first for layer caching. The build context is the REPO ROOT
+# (see render.yaml) so both the engine package and the root models/ (the
+# deep-tier intent model — trained through the promotion gates) ship with
+# the image; without it the live deep tier degrades to the fast tier only.
+COPY engine/requirements.txt ./engine/requirements.txt
+RUN pip install --upgrade pip && pip install -r engine/requirements.txt
 
-# Copy engine source as the `engine` package (WORKDIR /app is the package
-# root) so `python -m engine.classifier.train` and `uvicorn engine.app:app`
-# resolve exactly as they do from the repo root on a dev machine.
-COPY . ./engine
+COPY engine ./engine
+COPY models ./models
 
 # Model artifacts: the COMMITTED, live-traffic-trained ones ship with the
 # image when present (they encode the hybrid corpus + gated retrains — a
 # seed-only build-time retrain scores ~8/16 on the red-team battery vs
 # 16/16 for the enriched artifacts). Fresh clones without artifacts still
 # train at build.
-RUN if [ ! -f engine/models/tfidf.joblib ] || [ ! -f engine/models/clf_ensemble.joblib ]; then \
+RUN if [ ! -f engine/models/tfidf.joblib ] && [ ! -f models/tfidf.joblib ]; then \
       python -m engine.classifier.train; \
     fi && \
     if [ ! -f engine/models/biometric_ensemble.joblib ]; then \

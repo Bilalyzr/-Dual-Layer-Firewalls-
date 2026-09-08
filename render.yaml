@@ -15,7 +15,7 @@ services:
     plan: free
     region: oregon            # change to frankfurt/singapore if closer
     dockerfilePath: ./engine/Dockerfile
-    dockerContext: ./engine
+    dockerContext: .
     healthCheckPath: /health
     # The engine trains both models at build time (Dockerfile RUN step), so no
     # extra env needed for the model artifacts. Expose the port Render assigns.
