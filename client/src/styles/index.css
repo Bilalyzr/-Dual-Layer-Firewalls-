@@ -988,7 +988,7 @@ summary:focus-visible,
 .risk-card-val { font-family: var(--mono); font-size: 22px; font-weight: 700; text-shadow: 0 0 10px currentColor; }
 .risk-card-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
 .risk-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
-.risk-table th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.risk-table th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--panel-edge); }
 .risk-table td { padding: 6px 4px; border-bottom: 1px solid rgba(80,220,255,0.06); color: var(--text); }
 .risk-table tr:hover td { background: rgba(0,240,255,0.04); }
 .profile-detail-row td { background: rgba(0,240,255,0.03) !important; }

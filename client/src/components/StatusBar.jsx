@@ -13,8 +13,10 @@ export default function StatusBar() {
   useEffect(() => {
     const load = () =>
       fetch("/api/alerts/status")
-        .then((r) => r.json())
-        .then(setS)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        // Only accept a well-formed payload; a partial body (e.g. a proxy error
+        // page parsed as JSON) must not be treated as valid status.
+        .then((d) => setS(d && d.firewall && d.biometric ? d : null))
         .catch(() => setS(null));
     load();
     const id = setInterval(load, 5000);
@@ -44,9 +46,9 @@ export default function StatusBar() {
         <span className="pill pill-warn">{s.biometric.mode}</span>
         <span className="muted small">z≥{s.biometric.zThreshold} · min {s.biometric.minSamples}</span>
       </span>
-      <Dot ok={s.engine.up} label="engine" />
-      <Dot ok={s.llm.configured} label={`llm ${s.llm.model}`} />
-      <Dot ok={s.db.persistent} label={`db${s.db.persistent ? "" : " (in-mem)"}`} />
+      <Dot ok={s.engine?.up} label="engine" />
+      <Dot ok={s.llm?.configured} label={`llm ${s.llm?.model ?? "—"}`} />
+      <Dot ok={s.db?.persistent} label={`db${s.db?.persistent ? "" : " (in-mem)"}`} />
     </div>
   );
 }
