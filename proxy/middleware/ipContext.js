@@ -150,6 +150,24 @@ export function resolveIpContext(req) {
     }
   }
 
+  // Vercel edge (the live site's rewrites): x-vercel-forwarded-for carries
+  // the REAL visitor IP and is set/overwritten by Vercel — a client cannot
+  // forge it through their edge. x-vercel-id proves the peer is Vercel.
+  // Gated by TRUST_VERCEL_EDGE so direct-to-origin callers can't forge
+  // these headers on deployments that don't sit behind Vercel.
+  const vff = firstIp(req, "x-vercel-forwarded-for");
+  if (vff && req.headers["x-vercel-id"] &&
+      String(process.env.TRUST_VERCEL_EDGE ?? "").toLowerCase() === "true") {
+    return {
+      clientIp: vff,
+      realIp: peer,
+      proxyChain: [vff, peer],
+      peerTrusted: true,
+      spoofed: false,
+      via: "vercel-edge",
+    };
+  }
+
   // Untrusted direct peer: forwarding headers are attacker-controlled. Ignore
   // them and pin the client to the socket peer — a forged XFF can't move it.
   if (!peerTrusted) {

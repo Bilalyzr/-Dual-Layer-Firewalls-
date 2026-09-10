@@ -40,6 +40,7 @@ beforeEach(() => {
   delete process.env.IP_FORENSICS_ENABLED;
   delete process.env.DEMO_PUBLIC_IP;
   delete process.env.DEMO_CLIENT_IP_HEADER;
+  delete process.env.TRUST_VERCEL_EDGE;
   __resetTrustedCache();
 });
 
@@ -216,5 +217,39 @@ describe("forensics encryption at rest", () => {
     const dec = decryptFields(enc, SENSITIVE_ALERT_FIELDS);
     expect(dec.forensics.clientIp).toBe("203.0.113.9");
     expect(dec.forensics.proxyChain).toEqual(["203.0.113.9", "127.0.0.1"]);
+  });
+});
+
+describe("resolveIpContext — Vercel edge rewrites (live site)", () => {
+  it("uses x-vercel-forwarded-for when gated on and x-vercel-id proves the peer", () => {
+    process.env.TRUST_VERCEL_EDGE = "true";
+    const ctx = resolveIpContext(fakeReq({
+      peer: "76.76.21.21", // Vercel edge (public, untrusted by default)
+      headers: {
+        "x-vercel-forwarded-for": "49.36.184.7",
+        "x-vercel-id": "iad1::abc123",
+        "x-forwarded-for": "49.36.184.7, 76.76.21.21",
+      },
+    }));
+    expect(ctx.clientIp).toBe("49.36.184.7");
+    expect(ctx.via).toBe("vercel-edge");
+    expect(ctx.spoofed).toBe(false);
+  });
+
+  it("ignores Vercel headers when the gate is off (default)", () => {
+    const ctx = resolveIpContext(fakeReq({
+      peer: "76.76.21.21",
+      headers: { "x-vercel-forwarded-for": "49.36.184.7", "x-vercel-id": "iad1::x" },
+    }));
+    expect(ctx.clientIp).toBe("76.76.21.21"); // pinned to the untrusted peer
+  });
+
+  it("requires x-vercel-id — the header alone cannot move the client IP", () => {
+    process.env.TRUST_VERCEL_EDGE = "true";
+    const ctx = resolveIpContext(fakeReq({
+      peer: "76.76.21.21",
+      headers: { "x-vercel-forwarded-for": "49.36.184.7" },
+    }));
+    expect(ctx.clientIp).toBe("76.76.21.21");
   });
 });

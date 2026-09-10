@@ -79,6 +79,11 @@ services:
       # minutes keeps it resident while the proxy itself is awake.
       - key: ENGINE_KEEPALIVE_MS
         value: "600000"
+      # The live site's /api/* arrives via Vercel rewrites: honor
+      # x-vercel-forwarded-for (Vercel-set, unforgeable through their edge)
+      # so forensics shows each visitor's REAL IP instead of the edge IP.
+      - key: TRUST_VERCEL_EDGE
+        value: "true"
       # ---- Firewall modes ----
       - key: FIREWALL_MODE
         value: enforce
