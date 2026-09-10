@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
-import { IconCheck, IconShieldCheck, MSG_ICONS } from "./Icons";
+import { IconCheck, IconShieldCheck, IconStarburst, MSG_ICONS } from "./Icons";
 
 const LLM_LABELS = {
   "local-fallback": "Local Qwen",
