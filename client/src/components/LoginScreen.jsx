@@ -5,7 +5,8 @@
  * LOW/MEDIUM risk logs in, HIGH is rejected with the risk breakdown.
  */
 import { useState } from "react";
-import { IconAlert, IconBan, IconCheck, IconKey, IconShield, IconUser } from "./Icons.jsx";
+import { IconAlert, IconBan, IconCheck, IconKey, IconUser } from "./Icons.jsx";
+import Logo from "./Logo.jsx";
 
 export default function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -57,7 +58,7 @@ export default function LoginScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-1)" }}>
       <div className="panel" style={{ width: 400, maxWidth: "90vw" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <span style={{ color: "var(--cyan)", filter: "drop-shadow(0 0 10px rgba(0,240,255,0.7))" }}><IconShield size={40} /></span>
+          <span style={{ filter: "drop-shadow(0 0 14px rgba(217,119,87,0.45))" }}><Logo idPrefix="login" size={52} /></span>
           <h2 style={{ fontSize: 14, letterSpacing: 2, textTransform: "uppercase", marginTop: 8 }}>
             Orthrus AI Firewall
           </h2>
