@@ -1230,3 +1230,23 @@ html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   .claude-star, .shimmer-text, .panel { animation: none; }
 }
+
+
+/* ---- RISK SCORE TREND instrument ---- */
+.rc-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.rc-title { font-family: var(--serif); font-size: 12px; letter-spacing: 0.6px; color: var(--text); }
+.rc-sub { font-size: 9.5px; color: var(--muted); }
+.rc-svg { width: 100%; height: auto; display: block; }
+.rc-y, .rc-x, .rc-th { font-family: var(--mono); font-size: 8.5px; fill: var(--muted); }
+.rc-th { fill: #d97757; letter-spacing: 0.5px; }
+.rc-now { font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.rc-hit { cursor: crosshair; }
+.rc-line { filter: drop-shadow(0 0 6px rgba(217,119,87,0.25)); }
+.rc-pulse { transform-box: fill-box; transform-origin: center; animation: rcPulse 1.8s ease-out infinite; }
+@keyframes rcPulse {
+  0%   { transform: scale(0.6); opacity: 0.5; }
+  70%  { transform: scale(1.9); opacity: 0; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.rc-legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 9.5px; color: var(--muted); margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .rc-pulse { animation: none; opacity: 0.2; } }

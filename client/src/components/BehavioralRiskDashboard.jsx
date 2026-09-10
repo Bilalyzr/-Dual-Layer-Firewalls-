@@ -100,13 +100,32 @@ export default function BehavioralRiskDashboard({ userId }) {
 
   // Chart: risk history as an area sparkline — the line is the risk score,
   // points are colored by verdict (red = injection block, green = allowed).
-  const chartPoints = riskHistory.length > 1
-    ? riskHistory.map((p, i) => `${(i / (riskHistory.length - 1)) * 100},${100 - p.score}`).join(" ")
-    : "";
-  const areaPoints = chartPoints
-    ? `0,100 ${chartPoints} 100,100`
-    : "";
   const lastPoint = riskHistory[riskHistory.length - 1];
+
+  // ---- §36 chart geometry: a real coordinate plane, not a stretched svg ----
+  const CW = 520, CH = 170, PL = 38, PR = 14, PT = 12, PB = 20;
+  const n = riskHistory.length;
+  const xAt = (i) => PL + (n > 1 ? (i * (CW - PL - PR)) / (n - 1) : 0);
+  const yAt = (score) => PT + ((100 - score) * (CH - PT - PB)) / 100;
+  // Catmull-Rom -> cubic Bezier for a smooth curve through the points
+  const smoothPath = (() => {
+    if (n < 2) return "";
+    const pts = riskHistory.map((p, i) => [xAt(i), yAt(p.score)]);
+    let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i],
+            p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d;
+  })();
+  const areaPath = smoothPath
+    ? `${smoothPath} L ${xAt(n - 1).toFixed(1)} ${yAt(0)} L ${xAt(0).toFixed(1)} ${yAt(0)} Z`
+    : "";
+  const trendColor = RISK_COLORS[lastPoint?.level] || "#30d158";
+  const fmt = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <section className="panel p-risk">
@@ -184,62 +203,79 @@ export default function BehavioralRiskDashboard({ userId }) {
         ))}
       </div>
 
-      {/* §36 — Risk Score Chart (live sparkline; every prompt = one point) */}
-      {riskHistory.length > 1 && (
+      {/* §36 — Risk Score Trend: a real instrument — axes, zone bands,
+          block threshold, smooth curve, tooltips, live pulse marker */}
+      {n > 1 && (
         <div className="behavioral-chart">
-          <div className="muted small" style={{ marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
-            <span>RISK SCORE TREND</span>
-            <span>
-              {riskHistory.length} events ·{" "}
-              <span style={{ color: "var(--red)" }}>
-                {riskHistory.filter((p) => p.blocked).length} blocked
-              </span>
-              {" "}· last {lastPoint ? Math.max(0, Math.round((Date.now() - lastPoint.ts) / 1000)) : 0}s ago
+          <div className="rc-head">
+            <span className="rc-title">RISK SCORE TREND</span>
+            <span className="rc-sub">
+              {n} events ·{" "}
+              <span style={{ color: "var(--red)" }}>{riskHistory.filter((p) => p.blocked).length} blocked</span>
+              {" "}· live
             </span>
           </div>
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 56 }}>
+          <svg viewBox={`0 0 ${CW} ${CH}`} className="rc-svg" role="img" aria-label="Risk score over time">
             <defs>
-              <linearGradient id="riskArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="rgba(255,124,0,0.28)" />
-                <stop offset="100%" stopColor="rgba(255,124,0,0.02)" />
+              <linearGradient id="rcArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={trendColor} stopOpacity="0.30" />
+                <stop offset="100%" stopColor={trendColor} stopOpacity="0.02" />
               </linearGradient>
             </defs>
-            {/* risk-level bands: LOW / MEDIUM / HIGH zones (score axis is
-                0 at the bottom, 100 at the top) */}
-            <rect x="0" y="0"  width="100" height="30" fill="rgba(255,56,96,0.06)" />
-            <rect x="0" y="30" width="100" height="35" fill="rgba(255,204,51,0.05)" />
-            <rect x="0" y="65" width="100" height="35" fill="rgba(0,255,157,0.04)" />
-            {/* threshold guide at the block line (80/100) */}
-            <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(255,56,96,0.35)" strokeWidth="0.4" strokeDasharray="2 2" />
-            {areaPoints && <polygon points={areaPoints} fill="url(#riskArea)" />}
-            <polyline points={chartPoints} fill="none" stroke="var(--cyan)" strokeWidth="1.4" />
-            {riskHistory.map((p, i) => (
-              <g key={i}>
-                <circle
-                  cx={(i / (riskHistory.length - 1)) * 100}
-                  cy={100 - p.score}
-                  r={p.blocked ? 1.6 : 1.0}
-                  fill={p.blocked ? "var(--red)" : "var(--green)"}
-                  stroke={p.blocked ? "rgba(255,56,96,0.5)" : "none"}
-                  strokeWidth="0.5"
-                />
-                {/* hover annotation: what this spike was */}
-                <rect
-                  x={Math.max(0, (i / (riskHistory.length - 1)) * 100 - 2)}
-                  y={Math.max(0, 100 - p.score - 2)} width="4" height="4"
-                  fill="transparent"
-                >
-                  <title>{`${p.blocked ? "BLOCKED" : "allowed"} · risk ${p.score}/100 · ${new Date(p.ts).toLocaleTimeString()}`}</title>
-                </rect>
+
+            {/* traffic-light zone bands */}
+            <rect x={PL} y={yAt(100)} width={CW - PL - PR} height={yAt(70) - yAt(100)} fill="rgba(255,59,48,0.07)" />
+            <rect x={PL} y={yAt(70)}  width={CW - PL - PR} height={yAt(35) - yAt(70)}  fill="rgba(255,204,0,0.06)" />
+            <rect x={PL} y={yAt(35)}  width={CW - PL - PR} height={yAt(0) - yAt(35)}   fill="rgba(48,209,88,0.05)" />
+
+            {/* gridlines + y labels */}
+            {[100, 70, 35, 0].map((v) => (
+              <g key={v}>
+                <line x1={PL} x2={CW - PR} y1={yAt(v)} y2={yAt(v)} stroke="#2f2e2c" strokeWidth="1" strokeDasharray={v === 100 || v === 0 ? "none" : "3 4"} />
+                <text x={PL - 6} y={yAt(v) + 3} textAnchor="end" className="rc-y">{v}</text>
               </g>
             ))}
+
+            {/* the BLOCK threshold — where the firewall cuts */}
+            <line x1={PL} x2={CW - PR} y1={yAt(55)} y2={yAt(55)} stroke="#d97757" strokeWidth="1.3" strokeDasharray="6 4" />
+            <text x={CW - PR} y={yAt(55) - 4} textAnchor="end" className="rc-th">BLOCK 55</text>
+
+            {/* the curve + its area */}
+            {areaPath && <path d={areaPath} fill="url(#rcArea)" />}
+            {smoothPath && <path d={smoothPath} fill="none" stroke={trendColor} strokeWidth="2.2" strokeLinecap="round" className="rc-line" />}
+
+            {/* points: red = blocked, green = allowed; hover = full detail */}
+            {riskHistory.map((p, i) => (
+              <g key={i}>
+                {p.blocked && <circle cx={xAt(i)} cy={yAt(p.score)} r="5.5" fill="none" stroke="#ff3b30" strokeWidth="1" opacity="0.45" />}
+                <circle cx={xAt(i)} cy={yAt(p.score)} r={p.blocked ? 3 : 2.2} fill={p.blocked ? "#ff3b30" : "#30d158"} />
+                <circle cx={xAt(i)} cy={yAt(p.score)} r="9" fill="transparent" className="rc-hit">
+                  <title>{`${p.blocked ? "BLOCKED" : "allowed"} · risk ${p.score}/100 · ${fmt(p.ts)}`}</title>
+                </circle>
+              </g>
+            ))}
+
+            {/* live pulse on the newest point */}
+            {lastPoint && (
+              <g>
+                <circle cx={xAt(n - 1)} cy={yAt(lastPoint.score)} r="6" fill={trendColor} opacity="0.35" className="rc-pulse" />
+                <text x={Math.min(xAt(n - 1) + 8, CW - PR - 4)} y={yAt(lastPoint.score) - 7} className="rc-now" textAnchor="end" fill={trendColor}>
+                  {lastPoint.score}
+                </text>
+              </g>
+            )}
+
+            {/* x labels: window start / end */}
+            <text x={PL} y={CH - 5} className="rc-x">{fmt(riskHistory[0].ts)}</text>
+            <text x={CW - PR} y={CH - 5} className="rc-x" textAnchor="end">{fmt(lastPoint?.ts || riskHistory[0].ts)}</text>
           </svg>
-          <div className="muted" style={{ fontSize: 9.5, marginTop: 2, display: "flex", gap: 10 }}>
-            <span><i className="band-key" style={{ background: "rgba(255,56,96,0.35)" }} /> HIGH 70+</span>
-            <span><i className="band-key" style={{ background: "rgba(255,204,51,0.35)" }} /> MEDIUM 35-70</span>
-            <span><i className="band-key" style={{ background: "rgba(0,255,157,0.3)" }} /> LOW</span>
-            <span style={{ color: "var(--red)" }}>● blocked</span>
-            <span style={{ color: "var(--green)" }}>● allowed</span>
+          <div className="rc-legend">
+            <span><i className="band-key" style={{ background: "rgba(255,59,48,0.5)" }} /> HIGH 70+</span>
+            <span><i className="band-key" style={{ background: "rgba(255,204,0,0.5)" }} /> MEDIUM 35–70</span>
+            <span><i className="band-key" style={{ background: "rgba(48,209,88,0.45)" }} /> LOW &lt;35</span>
+            <span style={{ color: "#ff3b30" }}>● blocked</span>
+            <span style={{ color: "#30d158" }}>● allowed</span>
+            <span style={{ color: "#d97757" }}>– – block threshold</span>
           </div>
         </div>
       )}
