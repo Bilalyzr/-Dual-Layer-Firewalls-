@@ -31,9 +31,9 @@ async function canvasFingerprint() {
     ctx.fillStyle = "#f60";
     ctx.fillRect(0, 0, 100, 30);
     ctx.fillStyle = "#069";
-    ctx.fillText("Dual-Layer firewall fingerprint", 2, 15);
+    ctx.fillText("Orthrus firewall fingerprint", 2, 15);
     ctx.fillStyle = "rgba(102,204,0,0.7)";
-    ctx.fillText("Dual-Layer firewall fingerprint", 4, 17);
+    ctx.fillText("Orthrus firewall fingerprint", 4, 17);
     return hash(c.toDataURL());
   } catch {
     return "canvas-blocked";

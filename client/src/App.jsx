@@ -85,7 +85,7 @@ export default function App() {
         <div className="brand">
           <Logo idPrefix="hdr" />
           <div className="brand-text">
-            <h1>Dual-Layer <span className="accent">AI Firewall</span></h1>
+            <h1>Orthrus <span className="accent">AI Firewall</span></h1>
             <div className="sub">
               SEMANTIC PROMPT-INJECTION DEFENSE · BEHAVIORAL RISK ANALYSIS
             </div>
@@ -120,7 +120,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        DUAL-LAYER AI FIREWALL
+        ORTHRUS AI FIREWALL
       </footer>
 
     </>

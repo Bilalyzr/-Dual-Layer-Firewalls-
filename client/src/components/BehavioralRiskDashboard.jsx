@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
-const RISK_COLORS = { LOW: "#00ff9d", MEDIUM: "#ffcc33", HIGH: "#ff3860" };
+const RISK_COLORS = { LOW: "#16a34a", MEDIUM: "#f59e0b", HIGH: "#dc2626" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
 
 /**
@@ -200,8 +200,8 @@ export default function BehavioralRiskDashboard({ userId }) {
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 56 }}>
             <defs>
               <linearGradient id="riskArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="rgba(0,240,255,0.35)" />
-                <stop offset="100%" stopColor="rgba(0,240,255,0.02)" />
+                <stop offset="0%" stopColor="rgba(255,124,0,0.28)" />
+                <stop offset="100%" stopColor="rgba(255,124,0,0.02)" />
               </linearGradient>
             </defs>
             {/* risk-level bands: LOW / MEDIUM / HIGH zones (score axis is

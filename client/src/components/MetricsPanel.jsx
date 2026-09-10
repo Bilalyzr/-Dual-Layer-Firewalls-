@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 function Stat({ label, value, sub, good }) {
   return (
     <div className="stat">
-      <div className="stat-val" style={{ color: good === false ? "#ff3860" : good === true ? "#00ff9d" : "#00f0ff" }}>
+      <div className="stat-val" style={{ color: good === false ? "#dc2626" : good === true ? "#16a34a" : "#ff7c00" }}>
         {value}
       </div>
       <div className="stat-lbl">{label}</div>

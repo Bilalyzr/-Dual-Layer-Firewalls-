@@ -1,5 +1,5 @@
 /**
- * Logo — the 3D "dual-layer" shield mark.
+ * Logo — the Orthrus shield mark.
  *
  * Rendered as a layered, gradient-shaded SVG: dark-steel body, neon-cyan rim
  * light, recessed glass panel, a glowing AI core with dual defense chevrons,

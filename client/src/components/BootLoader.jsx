@@ -57,7 +57,7 @@ export default function BootLoader({ onDone }) {
         <div className="boot-term">
           <div className="boot-term-bar">
             <span className="bt-dot" /><span className="bt-dot" /><span className="bt-dot" />
-            <span className="bt-title"><IconShield size={11} /> dual-layer-firewall — secure boot</span>
+            <span className="bt-title"><IconShield size={11} /> orthrus — secure boot</span>
             <span className="bt-pct">{pct}%</span>
           </div>
           <div className="boot-term-body">
@@ -91,7 +91,7 @@ export default function BootLoader({ onDone }) {
           <div className="boot-bar"><span style={{ width: `${pct}%` }} /></div>
         </div>
         <div className="boot-title">
-          DUAL-LAYER <span>AI FIREWALL</span>
+          ORTHRUS <span>AI FIREWALL</span>
         </div>
       </div>
     </div>

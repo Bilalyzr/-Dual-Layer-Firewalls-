@@ -48,18 +48,18 @@ export default function LoginScreen({ onLogin }) {
     }
   };
 
-  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#ff3860"
-    : result?.behavioral?.risk_level === "MEDIUM" ? "#ffcc33" : "#00ff9d";
+  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#dc2626"
+    : result?.behavioral?.risk_level === "MEDIUM" ? "#f59e0b" : "#16a34a";
 
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-1)" }}>
       <div className="panel" style={{ width: 400, maxWidth: "90vw" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <span style={{ color: "var(--cyan)", filter: "drop-shadow(0 0 10px rgba(0,240,255,0.7))" }}><IconShield size={40} /></span>
           <h2 style={{ fontSize: 14, letterSpacing: 2, textTransform: "uppercase", marginTop: 8 }}>
-            Dual-Layer AI Firewall
+            Orthrus AI Firewall
           </h2>
           <div className="muted small">Login — Behaviorally Analyzed</div>
         </div>
@@ -99,8 +99,8 @@ export default function LoginScreen({ onLogin }) {
         )}
 
         {result?.success && (
-          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "#00ff9d15", border: "1px solid #00ff9d40" }}>
-            <div style={{ color: "#00ff9d", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.35)" }}>
+            <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
             <div className="small muted" style={{ marginTop: 4 }}>
               Risk: {result.behavioral?.risk_score}/100 ({result.behavioral?.risk_level})
             </div>

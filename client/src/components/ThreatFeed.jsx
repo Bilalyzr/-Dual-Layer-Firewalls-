@@ -21,16 +21,16 @@ function redactIp(ip) {
 }
 
 const CAT_COLORS = {
-  LLM01: "#ff3860",
-  LLM02: "#ff8a3d",
-  LLM03: "#ffcc33",
-  LLM04: "#00ff9d",
-  LLM05: "#00f0ff",
-  LLM06: "#9d6bff",
-  LLM07: "#ff3df0",
-  LLM08: "#36e2ff",
-  LLM09: "#5d7298",
-  LLM10: "#2f7bff",
+  LLM01: "#dc2626",
+  LLM02: "#ea580c",
+  LLM03: "#d97706",
+  LLM04: "#16a34a",
+  LLM05: "#0891b2",
+  LLM06: "#7c3aed",
+  LLM07: "#db2777",
+  LLM08: "#0e7490",
+  LLM09: "#475569",
+  LLM10: "#2563eb",
 };
 
 export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
