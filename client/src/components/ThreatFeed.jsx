@@ -25,12 +25,12 @@ const CAT_COLORS = {
   LLM02: "#e08d6d",
   LLM03: "#e0b36a",
   LLM04: "#a3c979",
-  LLM05: "#8fabcc",
+  LLM05: "#d9c1a8",
   LLM06: "#b9a9c4",
   LLM07: "#d4a0be",
-  LLM08: "#9db6cf",
+  LLM08: "#c9aed4",
   LLM09: "#8a887f",
-  LLM10: "#8fabcc",
+  LLM10: "#9fb8ab",
 };
 
 export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {

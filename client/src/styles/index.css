@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 /* ==========================================================================
    DUAL-LAYER AI FIREWALL — 3D Cybersecurity Dashboard
    Glassmorphism · neon glow · animated grid · holographic depth · scanlines
@@ -17,7 +18,7 @@
   /* Accents — terracotta pops on dark; statuses brightened warm */
   --cyan: #d97757;
   --cyan-soft: #e08d6d;
-  --blue: #8fabcc;
+  --blue: #e0a48f;
   --green: #a3c979;
   --yellow: #e0b36a;
   --orange: #e08d6d;
@@ -29,9 +30,9 @@
   --text: #f4f3ee;
   --text-dim: #c2c0b8;
   --muted: #8a887f;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 
   /* Shadows — soft warm glows on dark */
   --glow-cyan: 0 0 18px rgba(217, 119, 87, 0.22), 0 0 44px rgba(217, 119, 87, 0.08);
@@ -101,7 +102,7 @@ summary:focus-visible,
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: rgba(217, 119, 87,0.03); }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(217, 119, 87,0.3), rgba(47, 123, 255, 0.3));
+  background: linear-gradient(180deg, rgba(217,119,87,0.28), rgba(224,179,106,0.20));
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(217, 119, 87,0.45); }
@@ -1000,7 +1001,7 @@ summary:focus-visible,
   max-width: 88%;
   border-left: 1px solid rgba(80, 220, 255, 0.12);
   border-right: 2px solid var(--blue);
-  background: linear-gradient(135deg, rgba(47, 123, 255, 0.10), rgba(8, 14, 30, 0.7));
+  background: linear-gradient(135deg, rgba(217,119,87,0.10), rgba(20,20,19,0.7));
 }
 .msg-assistant, .msg-system { max-width: 95%; }
 .chat-log { scroll-behavior: smooth; }
@@ -1173,6 +1174,14 @@ mark.hl-p3 { background: rgba(22, 163, 74,0.27); color: #166534; }
   letter-spacing: 0.2px;
   font-weight: 600;
 }
+
+/* Micro-interactions: cards lift faintly, buttons press, smooth scroll */
+html { scroll-behavior: smooth; }
+.panel { transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
+.panel:hover { transform: translateY(-1px); border-color: var(--panel-edge-hot); }
+.btn { transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease; }
+.btn:hover { filter: brightness(1.06); }
+.btn:active { transform: scale(0.975); }
 
 /* Gentle content fade-in (Claude's soft entrances) */
 .panel { animation: panelIn 0.45s cubic-bezier(0.22, 0.61, 0.36, 1) backwards; }
