@@ -49,8 +49,8 @@ export default function LoginScreen({ onLogin }) {
     }
   };
 
-  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#e59896"
-    : result?.behavioral?.risk_level === "MEDIUM" ? "#e0b36a" : "#a3c979";
+  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#ff3b30"
+    : result?.behavioral?.risk_level === "MEDIUM" ? "#ffcc00" : "#30d158";
 
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
@@ -101,7 +101,7 @@ export default function LoginScreen({ onLogin }) {
 
         {result?.success && (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(163,201,121,0.12)", border: "1px solid rgba(22,163,74,0.35)" }}>
-            <div style={{ color: "#a3c979", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
+            <div style={{ color: "#30d158", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
             <div className="small muted" style={{ marginTop: 4 }}>
               Risk: {result.behavioral?.risk_score}/100 ({result.behavioral?.risk_level})
             </div>

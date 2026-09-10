@@ -8,7 +8,7 @@ import { Fragment, useState } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
-const RISK_COLORS = { LOW: "#a3c979", MEDIUM: "#e0b36a", HIGH: "#e59896" };
+const RISK_COLORS = { LOW: "#30d158", MEDIUM: "#ffcc00", HIGH: "#ff3b30" };
 
 export default function RiskTable({ onFocusUser = null }) {
   const { behavior } = useThreatStream(50);
