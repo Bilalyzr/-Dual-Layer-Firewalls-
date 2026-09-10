@@ -54,7 +54,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
   );
 
   return (
-    <section className="panel">
+    <section className="panel p-feed">
       <div className="panel-head">
         <h2>Real-Time Threat Feed</h2>
         <button

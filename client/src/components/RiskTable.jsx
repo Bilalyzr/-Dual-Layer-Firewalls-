@@ -22,7 +22,7 @@ export default function RiskTable({ onFocusUser = null }) {
   const rows = [...userMap.values()].slice(0, 20);
 
   return (
-    <section className="panel">
+    <section className="panel p-table">
       <div className="panel-head">
         <h2>User Risk Table</h2>
       </div>

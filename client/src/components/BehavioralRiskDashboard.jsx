@@ -109,7 +109,7 @@ export default function BehavioralRiskDashboard({ userId }) {
   const lastPoint = riskHistory[riskHistory.length - 1];
 
   return (
-    <section className="panel">
+    <section className="panel p-risk">
       <div className="panel-head">
         <h2>Behavioral Risk Analysis</h2>
         <span className={`dot ${connected ? "dot-on" : "dot-off"}`} />

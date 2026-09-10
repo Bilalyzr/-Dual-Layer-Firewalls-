@@ -210,7 +210,7 @@ export default function ChatPanel({ userId }) {
   };
 
   return (
-    <section className="panel chat-panel">
+    <section className="panel chat-panel p-chat">
       <StepUpModal
         open={stepUp}
         onVerified={onStepUpVerified}

@@ -32,7 +32,7 @@ export default function MetricsPanel() {
     return () => clearInterval(id);
   }, []);
 
-  if (!m) return <section className="panel"><p className="muted">loading metrics…</p></section>;
+  if (!m) return <section className="panel p-metrics"><p className="muted">loading metrics…</p></section>;
 
   const c = m.classifier || {};
   const ready = c.ready === true;
@@ -42,7 +42,7 @@ export default function MetricsPanel() {
   const fmt = (v, digits = 2) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "n/a");
 
   return (
-    <section className="panel">
+    <section className="panel p-metrics">
       <div className="panel-head">
         <h2>Benchmark</h2>
         <span className="muted small">{m.note}</span>

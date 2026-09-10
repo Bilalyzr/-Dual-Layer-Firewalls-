@@ -22,11 +22,11 @@ export default function RiskSummary() {
     { label: "Low Risk", value: low, color: "var(--ok)" },
     { label: "Medium Risk", value: med, color: "var(--warn)" },
     { label: "High Risk", value: high, color: "var(--bad)" },
-    { label: "Blocked", value: blocked, color: "#ff8a3d" },
+    { label: "Blocked", value: blocked, color: "#e0b36a" },
   ];
 
   return (
-    <section className="panel">
+    <section className="panel p-summary">
       <div className="panel-head">
         <h2>Risk Overview</h2>
       </div>

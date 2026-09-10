@@ -274,15 +274,24 @@ summary:focus-visible,
 .col-right .panel:nth-child(3) { animation-delay: 0.35s; }
 .row-full .panel { animation-delay: 0.02s; }
 
-/* Glowing top edge */
+/* Identity top edge — each panel owns its accent (see .p-* classes) */
 .panel::before {
   content: "";
   position: absolute;
-  top: 0; left: 10%; right: 10%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-  opacity: 0.6;
+  top: 0; left: 18px; right: 18px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, var(--panel-accent, var(--cyan)), transparent 85%);
+  opacity: 0.85;
 }
+/* Per-panel accents — so the dashboard reads as distinct stations, not clones */
+.p-chat    { --panel-accent: #d97757; }  /* LLM chat — terracotta */
+.p-risk    { --panel-accent: #e0b36a; }  /* behavioral risk — amber */
+.p-feed    { --panel-accent: #e59896; }  /* threat feed — rose */
+.p-table   { --panel-accent: #a3c979; }  /* user risk table — sage */
+.p-metrics { --panel-accent: #d9c1a8; }  /* metrics — sand */
+.p-sla     { --panel-accent: #c9aed4; }  /* SLA — lilac */
+.p-summary { --panel-accent: #e08d6d; }  /* risk overview — apricot */
 /* Corner brackets — HUD aesthetic */
 .panel::after {
   content: "";
@@ -290,6 +299,7 @@ summary:focus-visible,
   inset: 6px;
   border-radius: 10px;
   pointer-events: none;
+  opacity: 0.5;
   background:
     linear-gradient(var(--cyan), var(--cyan)) top left / 14px 1px no-repeat,
     linear-gradient(var(--cyan), var(--cyan)) top left / 1px 14px no-repeat,
@@ -385,7 +395,7 @@ summary:focus-visible,
   padding-top: 6px;
   border-top: 1px dashed rgba(80, 220, 255, 0.1);
 }
-.msg-assistant { border-left: 2px solid var(--cyan); box-shadow: inset 3px 0 12px rgba(217, 119, 87,0.06); }
+.msg-assistant { border-left: 2px solid #d9c1a8; border-left: 2px solid var(--cyan); box-shadow: inset 3px 0 12px rgba(217, 119, 87,0.06); }
 .msg-user      { border-left: 2px solid var(--blue); }
 .msg-system    { border-left: 2px solid var(--yellow); }
 .msg-blocked {
@@ -550,9 +560,10 @@ summary:focus-visible,
    ========================================================================== */
 .bio-grid { display: grid; grid-template-columns: 130px 1fr; gap: 18px; align-items: center; }
 
+.gauge-val { font-family: var(--serif); font-size: 34px !important; }
 .gauge {
   position: relative;
-  width: 130px; height: 130px;
+  width: 148px; height: 148px;
   border-radius: 50%;
   display: flex;
   flex-direction: column;
@@ -957,14 +968,16 @@ summary:focus-visible,
 /* Behavioral Risk Analysis UI (PRD §34-38) */
 .behavioral-metrics-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 12px 0; }
 @media (max-width:600px){ .behavioral-metrics-grid{grid-template-columns:repeat(2,1fr);} }
-.behavioral-metric { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 8px 6px; text-align: center; }
+.behavioral-metric { background: #141414; border: 1px solid #2f2e2c; border-top: 2px solid var(--panel-accent, #e0b36a); border-radius: 10px; padding: 9px 6px; text-align: center; transition: transform .2s ease; }
+.behavioral-metric:hover { transform: translateY(-1px); }
 .behavioral-metric-val { font-family: var(--mono); font-size: 16px; font-weight: 700; text-shadow: 0 0 8px currentColor; }
 .behavioral-metric-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
-.behavioral-chart { margin: 8px 0; padding: 6px 0; border-top: 1px dashed rgba(80,220,255,0.1); }
+.behavioral-chart { margin: 10px 0; padding: 10px 12px 12px; background: #141414; border: 1px solid #2f2e2c; border-radius: 12px; }
 .decision-json { background: rgba(2,6,16,0.8); border: 1px solid rgba(80,220,255,0.1); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 10px; color: var(--cyan); margin-top: 6px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
 .risk-cards-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
 @media (max-width:500px){ .risk-cards-grid{grid-template-columns:repeat(2,1fr);} }
-.risk-card { background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 10px 6px; text-align: center; }
+.risk-card { position: relative; overflow: hidden;
+  border-top: 2px solid var(--panel-accent, #e08d6d); background: rgba(2,6,16,0.6); border: 1px solid rgba(80,220,255,0.12); border-radius: 8px; padding: 10px 6px; text-align: center; }
 .risk-card-val { font-family: var(--mono); font-size: 22px; font-weight: 700; text-shadow: 0 0 10px currentColor; }
 .risk-card-lbl { font-family: var(--mono); font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
 .risk-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }

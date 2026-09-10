@@ -47,7 +47,7 @@ export default function SlaPanel() {
   const errorRate = sla.errorRate ?? sla.errors;
 
   return (
-    <section className="panel sla-panel">
+    <section className="panel sla-panel p-sla">
       <div className="panel-head">
         <h2>SLA &amp; Observability</h2>
         <span className="muted small">live</span>
