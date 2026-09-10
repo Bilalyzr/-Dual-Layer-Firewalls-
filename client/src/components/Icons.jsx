@@ -133,6 +133,13 @@ export const IconX = (p) => (
   </Svg>
 );
 
+/** Claude-style starburst — the pulsing loading mark. */
+export const IconStarburst = (p) => (
+  <Svg {...p} strokeWidth="1.8">
+    <path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.6 5.6l3.5 3.5M14.9 14.9l3.5 3.5M18.4 5.6l-3.5 3.5M9.1 14.9l-3.5 3.5" />
+  </Svg>
+);
+
 /**
  * Icon lookup for dynamic (non-JSX) message strings: chat/system messages
  * carry an `icon` key, and the bubble renders the matching vector here.

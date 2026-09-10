@@ -21,16 +21,16 @@ function redactIp(ip) {
 }
 
 const CAT_COLORS = {
-  LLM01: "#dc2626",
-  LLM02: "#ea580c",
-  LLM03: "#d97706",
-  LLM04: "#16a34a",
-  LLM05: "#0891b2",
-  LLM06: "#7c3aed",
-  LLM07: "#db2777",
-  LLM08: "#0e7490",
-  LLM09: "#475569",
-  LLM10: "#2563eb",
+  LLM01: "#c96462",
+  LLM02: "#c96f2f",
+  LLM03: "#d4a03c",
+  LLM04: "#6a994e",
+  LLM05: "#7d95b5",
+  LLM06: "#94829c",
+  LLM07: "#b57ba0",
+  LLM08: "#6d8ba3",
+  LLM09: "#6f6a5e",
+  LLM10: "#7d95b5",
 };
 
 export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
@@ -121,7 +121,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
           const geo = t.forensics?.enrichment?.geoip;
           return (
             <li key={i} className="feed-item">
-              <span className="cat-tag" style={{ background: CAT_COLORS[cat] || "#475569" }}>
+              <span className="cat-tag" style={{ background: CAT_COLORS[cat] || "#6f6a5e" }}>
                 {cat}
               </span>
               <div className="feed-body">

@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
-const RISK_COLORS = { LOW: "#16a34a", MEDIUM: "#f59e0b", HIGH: "#dc2626" };
+const RISK_COLORS = { LOW: "#6a994e", MEDIUM: "#d4a03c", HIGH: "#c96462" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
 
 /**

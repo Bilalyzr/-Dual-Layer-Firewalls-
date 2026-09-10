@@ -8,7 +8,7 @@
  * Honours prefers-reduced-motion by stepping fast.
  */
 import { useEffect, useState } from "react";
-import { IconShield } from "./Icons.jsx";
+import { IconShield, IconStarburst } from "./Icons.jsx";
 
 // [module, status] — the dot leader + timing are generated per line.
 const STEPS = [

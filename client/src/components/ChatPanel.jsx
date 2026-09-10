@@ -304,9 +304,10 @@ export default function ChatPanel({ userId }) {
               </div>
               <div className="pl-bar"><i className="pl-scan" /></div>
               <div className="pl-label">
-                {stage < PIPELINE.length - 1
+                <IconStarburst size={11} className="claude-star" style={{ marginRight: 5, verticalAlign: "-1px" }} />
+                <span className="shimmer-text">{stage < PIPELINE.length - 1
                   ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
-                  : "answering"}
+                  : "answering"}</span>
                 <span className="pl-dots"><i /><i /><i /></span>
               </div>
             </div>
