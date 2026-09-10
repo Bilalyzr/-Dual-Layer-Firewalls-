@@ -339,17 +339,46 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
 
     # PROMOTION GATE (champion–challenger): a retrain goes live only when its
     # holdout accuracy is not meaningfully worse than the deployed model's
-    # last recorded accuracy. A bad retrain (noisy batch, poisoned labels) is
-    # DISCARDED here — the live model stays, no rollback ever needed.
+    # last recorded accuracy AND its benign precision holds — a model that
+    # blocks everyday prompts is unusable no matter its accuracy (observed:
+    # v68 held holdout accuracy but pushed live benign prompts over the
+    # decision threshold). Hard cap 5% FPR, or +2 points over the champion.
     new_acc = metrics.get("accuracy")
+    new_fpr = metrics.get("false_positive_rate")
     prev_acc = None
+    prev_fpr = None
     try:
         from services.audit_log import latest_model_version
 
         prev_metrics = (latest_model_version() or {}).get("metrics") or {}
         prev_acc = prev_metrics.get("accuracy")
+        prev_fpr = prev_metrics.get("fpr", prev_metrics.get("false_positive_rate"))
     except Exception:
         prev_acc = None
+    fpr_cap = 0.05 if prev_fpr is None else max(0.05, float(prev_fpr) + 0.02)
+    if new_fpr is not None and float(new_fpr) > fpr_cap:
+        print(f"[retrain-realtime] PROMOTION REJECTED — challenger benign "
+              f"false-positive rate {float(new_fpr):.4f} > {fpr_cap:.4f}; "
+              "keeping the live model (blocking users is worse than missing attacks)")
+        try:  # governance log — surfaces in the Test-Case Report
+            from services.report_store import append_record
+
+            append_record(
+                "model_rejected", tier="deep",
+                challenger_accuracy=new_acc, champion_accuracy=prev_acc,
+                challenger_fpr=new_fpr,
+                reason="challenger benign false-positive rate above cap",
+                samples=int(len(texts)),
+            )
+        except Exception:
+            pass
+        return {
+            "status": "rejected",
+            "reason": "challenger benign false-positive rate above cap",
+            "challenger_accuracy": new_acc,
+            "challenger_fpr": new_fpr,
+            "samples": int(len(texts)),
+        }
     if prev_acc is not None and new_acc is not None and \
             float(new_acc) < float(prev_acc) - 0.01:
         print(f"[retrain-realtime] PROMOTION REJECTED — challenger "

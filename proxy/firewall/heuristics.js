@@ -34,8 +34,16 @@ const RULES = [
     label: "Prompt redefinition (new instructions)",
   },
   // Role-play jailbreaks (DAN, AIM, developer mode) — LLM01.
+  // Ambiguous short names (dan/aim/stan) match everyday English ("my aim
+  // is…") — they only count INSIDE a persona-assignment phrase. Strong
+  // unambiguous tokens stay free-standing.
   {
-    re: /\b(dan|aim|developer\s+mode|jailbreak|stan|evil\s+assistant|unrestricted\s+model|chaosgpt|unrestricted[-\s]?mode[-\s]?gpt|gpt-?[5-9])\b/i,
+    re: /\b(you\s+are|u\s+are|act\s+as|pretend\s+to\s+be|behave\s+like|play\s+the\s+role\s+of|from\s+now\s+on)[^.]{0,30}\b(dan|aim|stan)\b/i,
+    category: "LLM01",
+    label: "Role-play jailbreak persona",
+  },
+  {
+    re: /\b(developer\s+mode|jailbreak|evil\s+assistant|unrestricted\s+model|chaosgpt|unrestricted[-\s]?mode[-\s]?gpt|gpt-?[5-9])\b/i,
     category: "LLM01",
     label: "Role-play jailbreak persona",
   },
