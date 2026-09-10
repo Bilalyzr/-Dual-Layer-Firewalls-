@@ -4,39 +4,39 @@
    ========================================================================== */
 
 :root {
-  /* Base palette — Claude: warm ivory surfaces, cream depth, soft warm borders */
-  --bg-0: #faf9f5;
-  --bg-1: #f5f3ec;
-  --bg-2: #f0eee6;
-  --panel: #ffffff;
-  --panel-edge: #e8e4d9;
-  --panel-edge-hot: rgba(217, 119, 87, 0.45);
+  /* Base palette — Claude DARK: #151515 base, warm charcoal panels */
+  --bg-0: #151515;
+  --bg-1: #1a1a19;
+  --bg-2: #1f1e1d;
+  --panel: #1f1e1d;
+  --panel-edge: #2f2e2c;
+  --panel-edge-hot: rgba(217, 119, 87, 0.5);
   --glass-blur: 0px;
   --radius: 14px;
 
-  /* Accents — Claude terracotta primary, warm-muted statuses */
+  /* Accents — terracotta pops on dark; statuses brightened warm */
   --cyan: #d97757;
-  --cyan-soft: #cc785c;
-  --blue: #7d95b5;
-  --green: #6a994e;
-  --yellow: #d4a03c;
-  --orange: #c96f2f;
-  --red: #c96462;
-  --magenta: #b57ba0;
-  --purple: #94829c;
+  --cyan-soft: #e08d6d;
+  --blue: #8fabcc;
+  --green: #a3c979;
+  --yellow: #e0b36a;
+  --orange: #e08d6d;
+  --red: #e59896;
+  --magenta: #d4a0be;
+  --purple: #b9a9c4;
 
-  /* Text — warm dark on ivory */
-  --text: #1f1e1d;
-  --text-dim: #4a463d;
-  --muted: #837d6f;
+  /* Text — warm off-whites on charcoal */
+  --text: #f4f3ee;
+  --text-dim: #c2c0b8;
+  --muted: #8a887f;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 
-  /* Shadows — barely-there warm depth */
-  --glow-cyan: 0 1px 2px rgba(61, 57, 41, 0.06), 0 6px 20px rgba(217, 119, 87, 0.14);
-  --glow-red: 0 1px 2px rgba(61, 57, 41, 0.06), 0 6px 20px rgba(201, 100, 98, 0.16);
-  --glow-green: 0 1px 2px rgba(61, 57, 41, 0.06), 0 6px 20px rgba(106, 153, 78, 0.14);
+  /* Shadows — soft warm glows on dark */
+  --glow-cyan: 0 0 18px rgba(217, 119, 87, 0.22), 0 0 44px rgba(217, 119, 87, 0.08);
+  --glow-red: 0 0 18px rgba(229, 152, 150, 0.22), 0 0 44px rgba(229, 152, 150, 0.08);
+  --glow-green: 0 0 18px rgba(163, 201, 121, 0.20), 0 0 44px rgba(163, 201, 121, 0.08);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -65,7 +65,7 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(217, 119, 87, 0.07), transparent 65%), linear-gradient(180deg, #faf9f5, #f5f3ec 70%, #f0eee6);
+  background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(217, 119, 87, 0.10), transparent 65%), linear-gradient(180deg, #1a1a19, #151515 55%, #141414);
   pointer-events: none;
 }
 @keyframes gridMove {
@@ -117,7 +117,7 @@ summary:focus-visible,
   align-items: center;
   justify-content: space-between;
   padding: 16px 28px;
-  background: linear-gradient(180deg, #ffffff, #f9fafb);
+  background: linear-gradient(180deg, #1f1e1d, #1a1a19);
   border-bottom: 1px solid var(--panel-edge);
   backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--panel-edge);
@@ -179,7 +179,7 @@ summary:focus-visible,
   gap: 22px;
   align-items: center;
   padding: 10px 28px;
-  background: #ffffff;
+  background: #1f1e1d;
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--panel-edge);
   font-family: var(--mono);
@@ -401,7 +401,7 @@ summary:focus-visible,
 
 .chat-input {
   width: 100%;
-  background: #ffffff;
+  background: #141414;
   color: var(--text);
   border: 1px solid var(--panel-edge); border-radius: var(--radius);
   border-radius: 10px;
@@ -463,7 +463,7 @@ summary:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(21, 21, 21, 0.92);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -568,7 +568,7 @@ summary:focus-visible,
   position: absolute;
   inset: 12px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 30%, #ffffff, #f3f4f6);
+  background: radial-gradient(circle at 50% 30%, rgba(217,119,87,0.12), transparent 70%), #1f1e1d;
   box-shadow: inset 0 0 12px rgba(0,0,0,0.6);
 }
 /* rotating tick ring */
@@ -730,7 +730,7 @@ summary:focus-visible,
 /* --- terminal window --- */
 .boot-term {
   text-align: left;
-  background: #0a1c32;
+  background: #1f1e1d;
   border: 1px solid var(--panel-edge-hot);
   border-radius: 8px;
   box-shadow: 0 0 40px rgba(217, 119, 87,0.105), inset 0 0 60px rgba(217, 119, 87,0.022);
@@ -744,7 +744,7 @@ summary:focus-visible,
 .boot-term-bar {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px;
-  background: #f3f4f6;
+  background: #262624;
   border-bottom: 1px solid var(--panel-edge);
 }
 .bt-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(217, 119, 87,0.188); }
@@ -845,7 +845,7 @@ summary:focus-visible,
   align-items: flex-end;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(180deg, #f9fafb, #ffffff);
+  background: linear-gradient(180deg, rgba(26,26,25,0.4), rgba(21,21,21,0.85));
   backdrop-filter: blur(3px);
 }
 .consent-card {
@@ -1057,8 +1057,8 @@ summary:focus-visible,
 .pl-track { display: flex; flex-wrap: wrap; gap: 4px; }
 .pl-chip {
   font-size: 10px; letter-spacing: 0.4px; color: var(--muted);
-  border: 1px solid rgba(93, 114, 152, 0.35); border-radius: 3px;
-  padding: 2px 7px; background: #ffffff;
+  border: 1px solid #3a3937; border-radius: 3px;
+  padding: 2px 7px; background: #1f1e1d;
   transition: color 0.25s, border-color 0.25s, box-shadow 0.25s;
 }
 .pl-chip.done {
