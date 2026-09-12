@@ -60,13 +60,25 @@ export default function StepUpModal({ open, onVerified, onCancel }) {
       const asserted = await startAuthentication({ optionsJSON: options });
       const { data } = await postJSON("/api/auth/webauthn/authenticate/verify", { response: asserted });
       if (!data.verified) throw new Error("assertion not verified");
+      // Staged hand-off: let the verify → verified → resume narrative play
+      // out before the modal closes and the frozen prompt retries.
       setStatus("verified");
-      onVerified?.();
+      setTimeout(() => setStatus("resuming"), 800);
+      setTimeout(() => onVerified?.(), 1500);
     } catch (err) {
       setError(err.message || String(err));
       setStatus("idle");
     }
   };
+
+  // Stage tracker state: 0 = verify (active while authenticating),
+  // 1 = verified, 2 = resume. Each finishes green as the flow advances.
+  const stageDone = status === "verified" || status === "resuming" ? 0 : -1;
+  const stageOn =
+    status === "authenticating" ? 0 :
+    status === "verified" ? 1 :
+    status === "resuming" ? 2 : -1;
+  const busy = status === "authenticating" || status === "verified" || status === "resuming";
 
   return (
     <div className="modal-backdrop">
@@ -76,24 +88,31 @@ export default function StepUpModal({ open, onVerified, onCancel }) {
           Your keystroke trust score collapsed below the enforcement threshold.
           Re-verify with your passkey or security key to continue.
         </p>
+        <div className="stepup-stages" aria-live="polite">
+          <span className={`stepup-stage${stageOn === 0 ? " on" : ""}${stageDone >= 0 ? " done" : ""}`}><i />verify</span>
+          <span className="stepup-arrow">→</span>
+          <span className={`stepup-stage${stageOn === 1 ? " on" : ""}${stageOn >= 2 ? " done" : ""}`}><i />verified</span>
+          <span className="stepup-arrow">→</span>
+          <span className={`stepup-stage${stageOn === 2 ? " on" : ""}`}><i />resume</span>
+        </div>
         {error && <div className="stepup-error"><IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} /> {error}</div>}
         <div className="stepup-actions">
           <button
             className="btn"
             onClick={authenticate}
-            disabled={status === "authenticating"}
+            disabled={busy}
           >
             {status === "authenticating" ? "Waiting for authenticator…" : "Verify with passkey →"}
           </button>
           <button
             className="btn btn-ghost"
             onClick={register}
-            disabled={status === "registering"}
+            disabled={status === "registering" || busy}
           >
             {status === "registering" ? "Registering…" : "Register a new passkey"}
           </button>
           {onCancel && (
-            <button className="btn btn-ghost" onClick={onCancel}>
+            <button className="btn btn-ghost" onClick={onCancel} disabled={busy}>
               Cancel
             </button>
           )}

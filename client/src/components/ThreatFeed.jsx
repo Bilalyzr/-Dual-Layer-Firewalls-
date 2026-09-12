@@ -6,6 +6,7 @@
  */
 import { useMemo, useState } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+import { fmtTime } from "../lib/format";
 
 /**
  * Source IPs are PII, so the feed redacts them by default (Epic A). The reveal
@@ -137,7 +138,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
               <div className="feed-body">
                 <div className="feed-label">{t.label || "threat detected"}</div>
                 <div className="feed-meta">
-                  {t.categoryTitle || "Policy violation"} · {t.userId || "anon"} · {ts && !isNaN(ts) ? ts.toLocaleTimeString() : "—"}
+                  {t.categoryTitle || "Policy violation"} · {t.userId || "anon"} · {ts && !isNaN(ts) ? fmtTime(ts) : "—"}
                   {t.kind === "outbound" ? " · OUTBOUND" : ""}
                   {clientIp ? (
                     <span className="feed-ip" title={showIps ? clientIp : "source IP redacted"}>

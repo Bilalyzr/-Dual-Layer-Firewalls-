@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+import { fmtTime } from "../lib/format";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
 const RISK_COLORS = { LOW: "#34d399", MEDIUM: "#fbbf24", HIGH: "#f87171" };
@@ -135,7 +136,7 @@ export default function BehavioralRiskDashboard({ userId }) {
     ? `${smoothPath} L ${xAt(n - 1).toFixed(1)} ${yAt(0)} L ${xAt(0).toFixed(1)} ${yAt(0)} Z`
     : "";
   const trendColor = RISK_COLORS[lastPoint?.level] || "#34d399";
-  const fmt = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const fmt = fmtTime;
 
   // Hover crosshair: map the pointer's x to the nearest point index.
   const onChartMove = (e) => {

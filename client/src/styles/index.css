@@ -1264,18 +1264,7 @@ html { scroll-behavior: smooth; }
   to   { opacity: 1; transform: none; }
 }
 
-/* Claude starburst: slow breathe + rotate (their signature loading mark) */
-.claude-star {
-  display: inline-block;
-  color: var(--cyan);
-  animation: claudePulse 2.4s ease-in-out infinite;
-}
-@keyframes claudePulse {
-  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.85; }
-  50%      { transform: scale(1.18) rotate(22deg); opacity: 1; }
-}
-
-/* Shimmer for loading text (Claude's soft sweep) */
+/* Shimmer for loading text */
 .shimmer-text {
   background: linear-gradient(90deg, var(--muted) 30%, var(--cyan) 50%, var(--muted) 70%);
   background-size: 200% 100%;
@@ -1289,7 +1278,27 @@ html { scroll-behavior: smooth; }
   to   { background-position: -200% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .claude-star, .shimmer-text, .panel { animation: none; }
+  .shimmer-text, .panel { animation: none; }
+}
+
+/* Step-up MFA staged progress (Tier 2 · EPIC B): verify → verified → resume */
+.stepup-stages {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted);
+}
+.stepup-stage { display: inline-flex; align-items: center; gap: 6px; }
+.stepup-stage i { width: 7px; height: 7px; border-radius: 50%; background: var(--panel-edge); }
+.stepup-stage.on { color: var(--cyan-soft); }
+.stepup-stage.on i {
+  background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.stepup-stage.done { color: var(--green); }
+.stepup-stage.done i { background: var(--green); box-shadow: 0 0 6px rgba(52, 211, 153, 0.5); }
+.stepup-arrow { color: var(--panel-edge); }
+@media (prefers-reduced-motion: reduce) {
+  .stepup-stage.on i { animation: none; }
 }
 
 
