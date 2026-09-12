@@ -1,5 +1,5 @@
 # =============================================================================
-# Unified Dual-Layer AI Firewall — DISTRIBUTED topology (Tier 2 · EPIC G)
+# Orthrus (Dual-Layer AI Firewall) — DISTRIBUTED topology (Tier 2 · EPIC G)
 #
 # The default docker-compose.yml runs the proxy as a single container. This file
 # is the PRD §7 Tier-2 target: the proxy split into independently-deployable,
@@ -109,7 +109,7 @@ services:
       FIREWALL_SVC_URL: http://firewall-svc:4000
       BIOMETRIC_SVC_URL: http://biometric-svc:4000
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
-      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Dual-Layer AI Firewall}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Orthrus AI Firewall}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:8080}
     depends_on:
       redis:

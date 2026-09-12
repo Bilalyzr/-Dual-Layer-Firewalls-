@@ -142,7 +142,7 @@ export function createApp({ role = "all" } = {}) {
 
   app.get("/", (_req, res) => {
     res.json({
-      service: "dual-layer-proxy",
+      service: "orthrus-proxy",
       role,
       version: "1.0.0",
       bus: busMode(),

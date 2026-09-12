@@ -22,7 +22,7 @@ export async function pageAlert(event) {
 
   const payload = {
     severity: sev,
-    title: event.title || event.label || "Dual-Layer Firewall alert",
+    title: event.title || event.label || "Orthrus Firewall alert",
     summary: event.summary || event.reason || "",
     source: "dlf-proxy",
     timestamp: new Date().toISOString(),

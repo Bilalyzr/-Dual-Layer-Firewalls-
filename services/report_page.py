@@ -15,7 +15,7 @@ PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Dual-Layer Firewall — Test Reports</title>
+<title>Orthrus — Test Reports</title>
 <style>
   :root { --bg:#0a0a13; --panel:#131422; --edge:rgba(148,136,255,.16);
           --text:#e8eaf2; --muted:#5d6478; --ok:#00ff9d; --bad:#ff3860;
@@ -51,7 +51,7 @@ PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>DUAL-LAYER <b>AI FIREWALL</b> — TEST REPORTS</h1>
+<h1>ORTHRUS <b>AI FIREWALL</b> — TEST REPORTS</h1>
 <div class="sub" id="sub">loading…</div>
 <div class="grid">
 

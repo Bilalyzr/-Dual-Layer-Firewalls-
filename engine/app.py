@@ -31,7 +31,7 @@ from .biometric.anomaly import (
 )
 from .classifier.model import get_classifier
 
-app = FastAPI(title="Dual-Layer Firewall — Processing Engine", version="1.0.0")
+app = FastAPI(title="Orthrus — Processing Engine", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -122,7 +122,7 @@ class ScoreRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 @app.get("/")
 def root() -> dict[str, Any]:
-    return {"service": "dual-layer-engine", "classifier_ready": _CLF_READY}
+    return {"service": "orthrus-engine", "classifier_ready": _CLF_READY}
 
 
 @app.post("/classify", response_model=ClassifyResponse)

@@ -1,6 +1,6 @@
 # Going Live — Free-Tier Deployment Guide
 
-Deploy the full Dual-Layer AI Firewall stack to the internet for free:
+Deploy the full Orthrus (Dual-Layer AI Firewall) stack to the internet for free:
 - **Frontend** → Vercel (free)
 - **Proxy + Engine** → Render (free)
 - **Database** → MongoDB Atlas (free M0)

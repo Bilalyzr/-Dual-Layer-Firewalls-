@@ -1,9 +1,9 @@
 {
-  "name": "dual-layer-client",
+  "name": "orthrus-client",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "SecOps dashboard + chat for the Dual-Layer AI Firewall.",
+  "description": "SecOps dashboard + chat for Orthrus — the Dual-Layer AI Firewall.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

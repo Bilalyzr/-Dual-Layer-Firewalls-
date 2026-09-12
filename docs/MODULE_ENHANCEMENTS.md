@@ -1,6 +1,6 @@
 # Which Modules Need Enhancement
 
-**Project:** Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
+**Project:** Orthrus — Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
 **Assessed:** 2026-07-29 · against `main` @ `fb7059e` + uncommitted Wave-3 work
 **Baseline health:** proxy suite **236/236 green**, client builds clean, monolith runs.
 

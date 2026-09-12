@@ -59,7 +59,7 @@ export function toRecord(event) {
   const p = event.payload || {};
   const fx = p.forensics || {};
   return {
-    vendor: "dual-layer-ai-firewall",
+    vendor: "orthrus",
     product: "prompt-firewall",
     eventType: event.type,
     ts: event.ts,
@@ -88,7 +88,7 @@ export function formatPayload(event) {
     case "splunk":
       return {
         time: Math.floor(new Date(event.ts).getTime() / 1000),
-        source: "dual-layer-ai-firewall",
+        source: "orthrus",
         sourcetype: "_json",
         event: rec,
       };

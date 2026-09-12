@@ -1,8 +1,8 @@
 {
-  "name": "dual-layer-firewall",
+  "name": "orthrus",
   "version": "1.0.0",
   "private": true,
-  "description": "Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform — Tier 1 MVP.",
+  "description": "Orthrus — Dual-Layer AI Firewall & Behavioral Zero-Trust Platform — Tier 1 MVP.",
   "type": "module",
   "scripts": {
     "dev": "node scripts/runner.js",

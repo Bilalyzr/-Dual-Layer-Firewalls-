@@ -1,5 +1,5 @@
 """
-Draw the system architecture diagram for the Unified Dual-Layer AI Firewall
+Draw the system architecture diagram for Orthrus (the Unified Dual-Layer AI Firewall)
 & Behavioral Zero-Trust Platform. Exports docs/architecture.jpg (JPEG).
 
 Uses PIL only (matplotlib unavailable in this env). Dark cyber theme to
@@ -70,7 +70,7 @@ def arrow_right(x0, x1, y, color=CYAN, width=3):
 
 
 # ---------------------------------------------------------------- title
-ctext(W / 2, 50, "UNIFIED DUAL-LAYER AI FIREWALL & BEHAVIORAL ZERO-TRUST PLATFORM",
+ctext(W / 2, 50, "ORTHRUS — DUAL-LAYER AI FIREWALL & BEHAVIORAL ZERO-TRUST PLATFORM",
       F_TITLE, CYAN)
 ctext(W / 2, 100, "System Architecture  ·  v1.0  ·  2026", F_SUB, MUTED)
 d.line([(200, 135), (W - 200, 135)], fill=(0, 240, 255, 60), width=1)

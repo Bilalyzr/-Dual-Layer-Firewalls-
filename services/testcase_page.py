@@ -14,7 +14,7 @@ PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dual-Layer AI Firewall — Test Case Report</title>
+<title>Orthrus — Test Case Report</title>
 <style>
   :root{
     --blue:#4472C4; --blue-d:#2f5597; --ink:#1f2430; --mut:#5b6472;
@@ -83,7 +83,7 @@ PAGE = r"""<!DOCTYPE html>
 <div class="doc">
   <div class="band">
     <div>
-      <h1>DUAL-LAYER AI FIREWALL — TEST CASE REPORT</h1>
+      <h1>ORTHRUS AI FIREWALL — TEST CASE REPORT</h1>
       <div class="sub">GenAI Security Proxy · 7-Layer Inspection Pipeline · Red-Team Battery &amp; Regression Suites</div>
     </div>
     <div id="verdict" class="badge">LOADING…</div>

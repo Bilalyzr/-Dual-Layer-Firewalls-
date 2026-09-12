@@ -139,13 +139,13 @@ def _offline_responder(prompt: str, rag_docs: list[str] | None) -> str:
             pass
 
     if _re.match(r"^(hi|hii+|hello|hey|yo|sup|good (morning|afternoon|evening)|vanakkam)\b", q) and len(q) < 40:
-        return ("Hello! I'm the assistant behind the Dual-Layer AI Firewall. "
+        return ("Hello! I'm the assistant behind the Orthrus AI Firewall. "
                 "Your message passed all seven inspection layers — ask me anything "
                 "and I'll do my best to help.")
     if _re.match(r"^(thanks|thank you|thx|great|nice|perfect)\b", q):
         return "You're welcome! Anything else I can help with?"
     if _re.search(r"who are you|what are you|introduce yourself|your name", q):
-        return ("I'm the assistant running behind the Dual-Layer AI Firewall — a security "
+        return ("I'm the assistant running behind the Orthrus AI Firewall — a security "
                 "proxy that inspects every prompt through seven layers before it reaches "
                 "me, and checks my answers on the way back out.")
     if _re.search(r"what can you do|help me|capabilities", q):

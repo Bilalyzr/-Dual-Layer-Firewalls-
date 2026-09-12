@@ -153,7 +153,7 @@ async function biometricRun() {
 }
 
 async function main() {
-  console.log(`\n  Dual-Layer AI Firewall — Phase 3 Benchmark`);
+  console.log(`\n  Orthrus — Phase 3 Benchmark`);
   console.log(`  target: ${BASE}\n`);
 
   // health

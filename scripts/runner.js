@@ -95,7 +95,7 @@ function shutdown() {
 process.on("SIGINT", () => { console.log("\nshutting down…"); shutdown(); });
 process.on("SIGTERM", shutdown);
 
-console.log(`${C.bold}Dual-Layer AI Firewall — local run${C.reset}`);
+console.log(`${C.bold}Orthrus — local run${C.reset}`);
 console.log(`${C.dim}  python:   ${PY}`);
 console.log(`  model:    ${process.env.LLM_MODEL || "(none)"}  @  ${process.env.LLM_BASE_URL || "(none)"}`);
 console.log(`  engine → :${ENGINE_PORT}   proxy → :${PROXY_PORT}   dashboard → :${CLIENT_PORT}`);

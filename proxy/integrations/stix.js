@@ -58,14 +58,14 @@ export async function buildStixBundle({ limit = 200 } = {}) {
   const seen = new Set();
 
   // One identity SDO for us as the producer.
-  const identityId = sdoId("identity", "dual-layer-ai-firewall");
+  const identityId = sdoId("identity", "orthrus");
   objects.push({
     type: "identity",
     spec_version: "2.1",
     id: identityId,
     created: nowIso,
     modified: nowIso,
-    name: "Dual-Layer AI Firewall",
+    name: "Orthrus AI Firewall",
     identity_class: "system",
   });
 
@@ -152,7 +152,7 @@ export async function buildStixBundle({ limit = 200 } = {}) {
 export function taxiiCollection() {
   return {
     id: uuid5("taxii:collection:indicators"),
-    title: "Dual-Layer AI Firewall — Indicators",
+    title: "Orthrus AI Firewall — Indicators",
     description: "IP + prompt-signature indicators observed by the AI firewall (STIX 2.1).",
     can_read: true,
     can_write: false,

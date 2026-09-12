@@ -1,10 +1,10 @@
-# DUAL-LAYER AI FIREWALL — Complete Project Documentation
+# ORTHRUS — Dual-Layer AI Firewall · Complete Project Documentation
 
 **An Intelligent GenAI Security Proxy for Prompt-Injection Detection, Behavioral Risk Analysis & Self-Learning Defense**
 
 | | |
 |---|---|
-| **Project** | Dual-Layer AI Firewall (GenAI Security Firewall Proxy) |
+| **Project** | Orthrus — Dual-Layer AI Firewall (GenAI Security Firewall Proxy) |
 | **Department** | Master of Computer Applications, Sona College of Technology (Autonomous) |
 | **Version** | 2.0 (Architecture v2 — 7-Layer Pipeline) |
 | **Repository** | `https://github.com/Bilalyzr/-Dual-Layer-Firewalls-` |
@@ -45,7 +45,7 @@
 
 Large Language Model (LLM) applications accept free-form natural-language input, which makes them vulnerable to **prompt injection, jailbreaks, PII smuggling, and poisoned RAG (Retrieval-Augmented Generation) documents**. A single successful injection can leak system prompts, API keys, or customer data. The LLM itself cannot distinguish an attacker's instruction from a legitimate one.
 
-The **Dual-Layer AI Firewall** is a real-time security proxy that sits between the user and the LLM. Every prompt passes through **seven defense layers** — sanitization, two-tier cascade classification, behavioral session analysis, RAG-context validation, multi-signal decision, LLM routing, and egress output filtering — before it reaches the model, and every response is checked before it reaches the user.
+The **Orthrus** Dual-Layer AI Firewall is a real-time security proxy that sits between the user and the LLM. Every prompt passes through **seven defense layers** — sanitization, two-tier cascade classification, behavioral session analysis, RAG-context validation, multi-signal decision, LLM routing, and egress output filtering — before it reaches the model, and every response is checked before it reaches the user.
 
 Detection is **dual-layer**: a millisecond lexical screen (TF-IDF ensemble) clears or condemns obvious prompts instantly, while a deep semantic engine (MiniLM sentence embeddings + XGBoost) catches novel attacks that share **zero keywords** with any known attack. Blocked attacks are stored in **Qdrant vector memory** (near-duplicates are blocked instantly forever), repeat offenders accumulate **strikes in Redis** (3 blocks in 24 h → automatic ban), and every verdict becomes **live training data** — the model retrains on real traffic every 5 minutes, with anti-poisoning guards.
 
@@ -629,7 +629,7 @@ dual-layer-firewall/
 
 ## 23. Conclusion
 
-The Dual-Layer AI Firewall demonstrates that LLM applications can be defended **in front of the model** rather than by hoping the model refuses. By combining millisecond lexical screening with deep semantic analysis, persistent attack memory, session-level behavioral risk, and continuous retraining on live traffic, the system blocks **100% of a novel red-team battery** while allowing every benign prompt — with every decision explainable and auditable. The architecture is provider-agnostic (any LLM behind LiteLLM), runs on commodity CPU hardware, and is fully containerized with CI/CD.
+The Orthrus firewall demonstrates that LLM applications can be defended **in front of the model** rather than by hoping the model refuses. By combining millisecond lexical screening with deep semantic analysis, persistent attack memory, session-level behavioral risk, and continuous retraining on live traffic, the system blocks **100% of a novel red-team battery** while allowing every benign prompt — with every decision explainable and auditable. The architecture is provider-agnostic (any LLM behind LiteLLM), runs on commodity CPU hardware, and is fully containerized with CI/CD.
 
 ---
 

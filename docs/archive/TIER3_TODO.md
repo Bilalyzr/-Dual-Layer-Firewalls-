@@ -120,7 +120,7 @@ Move from *observe* to *act*: block repeat offenders automatically.
 - **Acceptance:** ✅ a user can withdraw consent and have biometric data erased on request; security logs are tamper-evident; retention is enforced automatically.
 
 ## EPIC J — Scalability & performance  · Effort L · 🟢
-- [x] ✅ Kubernetes Helm charts: `deploy/helm/dual-layer-firewall/` (Chart.yaml + values.yaml — HPA, PDB, resources, ingress).
+- [x] ✅ Kubernetes Helm charts: `deploy/helm/orthrus/` (Chart.yaml + values.yaml — HPA, PDB, resources, ingress).
 - [x] ✅ Edge caching of classifier decisions: `proxy/firewall/classifierCache.js` (LRU + TTL, never caches threats).
 - [x] ✅ Optional GPU inference service: `gpu-engine/Dockerfile` (CUDA base for DistilBERT/Llama Guard) + `proxy/firewall/gpuRouter.js` (routes to GPU svc when `INFERENCE_SVC_URL` set; CPU fallback via circuit breaker). Needs GPU hardware to accelerate; CPU fallback works.
 - [x] ✅ Circuit-breaker pattern: `proxy/firewall/circuitBreaker.js` (closed/open/half-open, reusable `withBreaker`).

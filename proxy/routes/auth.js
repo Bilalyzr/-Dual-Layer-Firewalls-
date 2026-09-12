@@ -33,7 +33,7 @@ import { publish } from "../middleware/eventBus.js";
 const router = Router();
 
 const rpID = () => process.env.WEBAUTHN_RP_ID || "localhost";
-const rpName = () => process.env.WEBAUTHN_RP_NAME || "Dual-Layer AI Firewall";
+const rpName = () => process.env.WEBAUTHN_RP_NAME || "Orthrus AI Firewall";
 const origin = () => process.env.WEBAUTHN_ORIGIN || "http://localhost:5174";
 
 const toB64url = (u8) => Buffer.from(u8).toString("base64url");

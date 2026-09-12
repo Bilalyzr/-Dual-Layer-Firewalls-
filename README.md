@@ -1,4 +1,4 @@
-# Dual-Layer AI Firewall — GenAI Security Proxy
+# 🛡️ Orthrus — Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
 
 A security proxy that sits in front of any LLM application and inspects every
 prompt and every response in real time:

@@ -1,5 +1,5 @@
 /**
- * Dual-Layer AI Firewall — Node.js Proxy (PRD §4 Proxy Layer).
+ * Orthrus — Node.js Proxy (PRD §4 Proxy Layer).
  *
  * Default entrypoint: boots the monolith (role "all") — every router in one
  * process, the original single-container behavior. Set SERVICE_ROLE to run a

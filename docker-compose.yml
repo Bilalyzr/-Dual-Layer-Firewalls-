@@ -1,5 +1,5 @@
 # =============================================================================
-# Unified Dual-Layer AI Firewall — full stack (Tier 1 MVP)
+# Orthrus (Dual-Layer AI Firewall) — full stack (Tier 1 MVP)
 #
 #   mongo   persistence layer (PRD §4 Database Layer)
 #   engine  Python processing layer: scikit-learn classifier + biometric scoring
@@ -100,7 +100,7 @@ services:
       BIOMETRIC_STEPUP_THRESHOLD: ${BIOMETRIC_STEPUP_THRESHOLD:-50}
       SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-session-secret-change-me}
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
-      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Dual-Layer AI Firewall}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Orthrus AI Firewall}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:8080}
       # EPIC E: route untrusted content to the sandboxed reader service.
       READER_SVC_URL: ${READER_SVC_URL:-http://reader-svc:8012}

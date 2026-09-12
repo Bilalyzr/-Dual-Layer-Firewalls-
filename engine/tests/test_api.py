@@ -18,7 +18,7 @@ def test_root_reports_engine_status():
     r = client.get("/")
     assert r.status_code == 200
     body = r.json()
-    assert body["service"] == "dual-layer-engine"
+    assert body["service"] == "orthrus-engine"
     assert "classifier_ready" in body
 
 

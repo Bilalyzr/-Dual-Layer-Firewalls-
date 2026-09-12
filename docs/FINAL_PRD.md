@@ -155,7 +155,7 @@ Built across three tiers (MVP → Enterprise → Advanced) with 327+ automated t
 | H.2 | Distributed tracing (x-request-id propagation) | ✅ | `withSpan()` + resource attributes |
 | H.3 | Alerting pipeline (PagerDuty/OpsGenie) | ✅ | `proxy/observability/alerting.js` |
 | H.4 | System-metric anomaly detection (DDoS warning) | ✅ | `proxy/observability/sla.js` |
-| J.1 | Kubernetes Helm charts (HPA, PDB) | ✅ | `deploy/helm/dual-layer-firewall/` |
+| J.1 | Kubernetes Helm charts (HPA, PDB) | ✅ | `deploy/helm/orthrus/` |
 | J.2 | GPU inference service (CUDA Dockerfile) | removed (unused) | — |
 
 ---

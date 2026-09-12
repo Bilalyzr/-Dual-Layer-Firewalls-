@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-**Project Name:** Unified Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
+**Project Name:** Orthrus — Dual-Layer AI Firewall & Behavioral Zero-Trust Platform
 **Version:** 2.0 | **Status:** Draft for Review
 
 > Reference document extracted from the original `Product Requirements Document.docx`. This MVP implements **Tier 1 (Phase 1–3)** of the rollout.
