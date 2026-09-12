@@ -21,6 +21,19 @@ function redactIp(ip) {
   return `${parts[0]}.···.···.${parts[3]}`;
 }
 
+/**
+ * Compact relative age for feed rows — "now", "42s", "5m", "3h" — so an
+ * analyst can see at a glance how fresh each threat is.
+ */
+function relTime(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 1000));
+  if (s < 10) return "now";
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h`;
+}
+
 const CAT_COLORS = {
   LLM01: "#2563eb",
   LLM02: "#0284c7",
@@ -58,6 +71,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
     <section className="panel p-feed">
       <div className="panel-head">
         <h2>Real-Time Threat Feed</h2>
+        <span className="muted small" title="events in the live window">{threats.length} events</span>
         <button
           type="button"
           className="ip-toggle"
@@ -131,7 +145,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
           const clientIp = t.forensics?.clientIp;
           const geo = t.forensics?.enrichment?.geoip;
           return (
-            <li key={i} className="feed-item">
+            <li key={i} className={`feed-item feed-item-sev-${t.blocked ? "bad" : "warn"}`}>
               <span className="cat-tag" style={{ background: CAT_COLORS[cat] || "#64748b" }}>
                 {cat}
               </span>
@@ -139,6 +153,7 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
                 <div className="feed-label">{t.label || "threat detected"}</div>
                 <div className="feed-meta">
                   {t.categoryTitle || "Policy violation"} · {t.userId || "anon"} · {ts && !isNaN(ts) ? fmtTime(ts) : "—"}
+                  {ts && !isNaN(ts) ? <span className="feed-rel"> · {relTime(t.ts)}</span> : ""}
                   {t.kind === "outbound" ? " · OUTBOUND" : ""}
                   {clientIp ? (
                     <span className="feed-ip" title={showIps ? clientIp : "source IP redacted"}>

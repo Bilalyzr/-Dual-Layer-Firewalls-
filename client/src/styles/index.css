@@ -1457,3 +1457,21 @@ html { scroll-behavior: smooth; }
 }
 .bio-row:last-child { border-bottom: none; }
 .bio-row .muted { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; }
+
+/* Threat feed fine-tune: severity edge per row */
+.feed-item { border-left: 2px solid transparent; }
+.feed-item-sev-bad  { border-left-color: var(--red); }
+.feed-item-sev-warn { border-left-color: var(--yellow); }
+.feed-rel { color: var(--cyan-soft); }
+
+/* Shared mini instrument bar — stat cards (Benchmark) and SLA cells */
+.stat-bar {
+  height: 3px; margin: 6px 10px 0;
+  border-radius: 2px;
+  background: rgba(96, 165, 250, 0.08);
+  overflow: hidden;
+}
+.stat-bar i {
+  display: block; height: 100%; border-radius: 2px;
+  transition: width 0.4s ease;
+}

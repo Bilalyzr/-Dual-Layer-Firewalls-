@@ -11,6 +11,25 @@ import PanelSkeleton from "./PanelSkeleton";
 
 const POLL_MS = 5000;
 
+/* Bar budgets: what a full bar means per metric. Latencies share a 500ms
+   budget so p50/p95/p99 read comparatively; error rate fills at 5%. */
+const LAT_BUDGET_MS = 500;
+const ERR_BUDGET_PCT = 5;
+
+function Cell({ num, lbl, cls = "", pct = null, barVar = "var(--cyan-soft)" }) {
+  return (
+    <div className="sla-cell">
+      <div className={`sla-num ${cls}`}>{num}</div>
+      <div className="sla-lbl">{lbl}</div>
+      {pct != null && Number.isFinite(pct) && (
+        <div className="stat-bar">
+          <i style={{ width: `${Math.min(100, Math.max(2, pct))}%`, background: barVar, boxShadow: `0 0 6px ${barVar}` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function fmtMs(v) {
   return v == null ? "—" : `${Number(v).toFixed(1)}ms`;
 }
@@ -66,34 +85,30 @@ export default function SlaPanel() {
       </div>
 
           <div className="sla-grid">
-            <div className="sla-cell">
-              <div className="sla-num">{fmtMs(lat.p50)}</div>
-              <div className="sla-lbl">p50</div>
-            </div>
-            <div className="sla-cell">
-              <div className="sla-num">{fmtMs(lat.p95)}</div>
-              <div className="sla-lbl">p95</div>
-            </div>
-            <div className="sla-cell">
-              <div className="sla-num">{fmtMs(lat.p99)}</div>
-              <div className="sla-lbl">p99</div>
-            </div>
-            <div className="sla-cell">
-              <div className="sla-num sla-ok">{fmtPct(availability)}</div>
-              <div className="sla-lbl">availability</div>
-            </div>
-            <div className="sla-cell">
-              <div className={`sla-num ${Number(errorRate) > 0 ? "sla-bad" : ""}`}>
-                {fmtPct(errorRate)}
-              </div>
-              <div className="sla-lbl">error rate</div>
-            </div>
-            <div className="sla-cell">
-              <div className={`sla-num ${anomalies.length ? "sla-warn" : "sla-ok"}`}>
-                {anomalies.length}
-              </div>
-              <div className="sla-lbl">anomalies</div>
-            </div>
+            <Cell num={fmtMs(lat.p50)} lbl="p50" pct={lat.p50 != null ? (lat.p50 / LAT_BUDGET_MS) * 100 : null} />
+            <Cell num={fmtMs(lat.p95)} lbl="p95" pct={lat.p95 != null ? (lat.p95 / LAT_BUDGET_MS) * 100 : null} />
+            <Cell num={fmtMs(lat.p99)} lbl="p99" pct={lat.p99 != null ? (lat.p99 / LAT_BUDGET_MS) * 100 : null} />
+            <Cell
+              num={fmtPct(availability)}
+              lbl="availability"
+              cls="sla-ok"
+              pct={availability != null ? Number(availability) <= 1 ? Number(availability) * 100 : Number(availability) : null}
+              barVar="var(--green)"
+            />
+            <Cell
+              num={fmtPct(errorRate)}
+              lbl="error rate"
+              cls={Number(errorRate) > 0 ? "sla-bad" : ""}
+              pct={errorRate != null ? ((Number(errorRate) <= 1 ? Number(errorRate) * 100 : Number(errorRate)) / ERR_BUDGET_PCT) * 100 : null}
+              barVar="var(--red)"
+            />
+            <Cell
+              num={anomalies.length}
+              lbl="anomalies"
+              cls={anomalies.length ? "sla-warn" : "sla-ok"}
+              pct={(anomalies.length / 10) * 100}
+              barVar={anomalies.length ? "var(--yellow)" : "var(--green)"}
+            />
           </div>
 
           {anomalies.length > 0 && (
