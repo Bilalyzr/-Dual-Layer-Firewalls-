@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
-import { IconCheck, IconShieldCheck, IconStarburst, MSG_ICONS } from "./Icons";
+import { IconShieldCheck, MSG_ICONS } from "./Icons";
 
 const LLM_LABELS = {
   "local-fallback": "Local Qwen",
@@ -51,7 +51,7 @@ function highlightTerms(text, ws) {
 }
 
 // The inspection chain a prompt really travels (7 layers + the LLM answer);
-// the loading indicator lights these up in order while the request is in flight.
+// the reply loader's stage ticker names these in order while in flight.
 const PIPELINE = ["sanitize", "sentiment", "cascade", "memory", "behavior", "rag", "decision", "llm"];
 
 export default function ChatPanel({ userId }) {
@@ -69,8 +69,8 @@ export default function ChatPanel({ userId }) {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  // Pipeline-scan indicator: advance one layer at a time while the request
-  // runs, dwell on "answering", then loop (the LLM fallback can take a while).
+  // Reply loader: advance the stage ticker one layer at a time while the
+  // request runs, dwell on "answering", then loop (LLM fallback can be slow).
   useEffect(() => {
     if (!busy) return;
     setStage(0);
@@ -291,24 +291,18 @@ export default function ChatPanel({ userId }) {
         {busy && (
           <div className="msg msg-assistant">
             <div className="msg-role">assistant</div>
-            <div className="chat-pipeline" role="status" aria-label="inspecting prompt through firewall layers">
-              <div className="pl-track">
-                {PIPELINE.map((name, i) => (
-                  <span
-                    key={name}
-                    className={`pl-chip${i < stage ? " done" : ""}${i === stage ? " active" : ""}`}
-                  >
-                    {name}{i < stage ? <> <IconCheck size={9} /></> : null}
-                  </span>
-                ))}
-              </div>
-              <div className="pl-bar"><i className="pl-scan" /></div>
-              <div className="pl-label">
-                <IconStarburst size={11} className="claude-star" style={{ marginRight: 5, verticalAlign: "-1px" }} />
+            <div className="reply-loader" role="status" aria-label="inspecting prompt through firewall layers">
+              <div className="rl-head">
+                <span className="rl-orb" aria-hidden="true" />
                 <span className="shimmer-text">{stage < PIPELINE.length - 1
                   ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
                   : "answering"}</span>
                 <span className="pl-dots"><i /><i /><i /></span>
+              </div>
+              <div className="rl-skel" aria-hidden="true">
+                <i style={{ width: "92%" }} />
+                <i style={{ width: "76%" }} />
+                <i style={{ width: "54%" }} />
               </div>
             </div>
           </div>
