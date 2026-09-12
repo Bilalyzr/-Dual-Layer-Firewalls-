@@ -96,13 +96,14 @@ export default function BehavioralRiskDashboard({ userId }) {
   const locationTrustPct = latest ? Math.round((latest.location_change ? 0.3 : 1.0) * 100) : 100;
   const authConfidence = latest ? Math.max(0, 100 - score) : 100;
 
+  const resPct = { low: 18, medium: 50, high: 75, critical: 92 }[latest?.resource_risk || "low"] ?? 18;
   const metrics = [
-    { label: "Behavioral Deviation", value: `${anomalyPct}%`, color: anomalyPct > 60 ? "var(--red)" : anomalyPct > 30 ? "var(--yellow)" : "var(--green)" },
-    { label: "Device Trust", value: `${deviceTrustPct}%`, color: deviceTrustPct > 70 ? "var(--green)" : deviceTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
-    { label: "Location Trust", value: `${locationTrustPct}%`, color: locationTrustPct > 70 ? "var(--green)" : locationTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
-    { label: "Resource Risk", value: (latest?.resource_risk || "low").toUpperCase(), color: latest?.resource_risk === "critical" ? "var(--red)" : latest?.resource_risk === "high" ? "var(--red)" : latest?.resource_risk === "medium" ? "var(--yellow)" : "var(--green)" },
-    { label: "Auth Confidence", value: `${authConfidence}%`, color: authConfidence > 70 ? "var(--green)" : authConfidence > 40 ? "var(--yellow)" : "var(--red)" },
-    { label: "Session Risk", value: level, color: color },
+    { label: "Behavioral Deviation", value: `${anomalyPct}%`, pct: anomalyPct, color: anomalyPct > 60 ? "var(--red)" : anomalyPct > 30 ? "var(--yellow)" : "var(--green)" },
+    { label: "Device Trust", value: `${deviceTrustPct}%`, pct: deviceTrustPct, color: deviceTrustPct > 70 ? "var(--green)" : deviceTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
+    { label: "Location Trust", value: `${locationTrustPct}%`, pct: locationTrustPct, color: locationTrustPct > 70 ? "var(--green)" : locationTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
+    { label: "Resource Risk", value: (latest?.resource_risk || "low").toUpperCase(), pct: resPct, color: latest?.resource_risk === "critical" ? "var(--red)" : latest?.resource_risk === "high" ? "var(--red)" : latest?.resource_risk === "medium" ? "var(--yellow)" : "var(--green)" },
+    { label: "Auth Confidence", value: `${authConfidence}%`, pct: authConfidence, color: authConfidence > 70 ? "var(--green)" : authConfidence > 40 ? "var(--yellow)" : "var(--red)" },
+    { label: "Session Risk", value: level, pct: Math.round(score), color: color },
   ];
 
   // Chart: risk history as an area sparkline — the line is the risk score,
@@ -159,6 +160,7 @@ export default function BehavioralRiskDashboard({ userId }) {
       {/* §25 — Behavioral Risk Command Center: fleet-wide aggregates */}
       {stats && (
         <div className="behavioral-command-center">
+          <div className="risk-section-lbl risk-section-first">fleet snapshot</div>
           <div className="behavioral-metrics-grid" style={{ marginBottom: 8 }}>
             {[
               { label: "Active Users", value: stats.active_users ?? 0, color: "var(--cyan)" },
@@ -203,24 +205,27 @@ export default function BehavioralRiskDashboard({ userId }) {
       )}
 
       {/* §34 — Risk gauge + level + decision */}
+      <div className={`risk-section-lbl${stats ? "" : " risk-section-first"}`}>live session <b>{userId || "—"}</b></div>
       <div className="bio-grid">
         <div className="gauge" style={{ "--g-color": color, "--g-pct": score, color }}>
           <div className="gauge-val" style={{ color }}>{score === 0 ? "—" : Math.round(score)}</div>
           <div className="gauge-lbl">risk / 100</div>
         </div>
         <div className="bio-info">
-          <div><span className="muted">risk level</span> <span className="pill" style={{ color, borderColor: color, background: `${color}15` }}>{level}</span></div>
-          <div><span className="muted">decision</span> <span className="small" style={{ color: latest?.decision === "ALLOW" ? "var(--green)" : "var(--red)" }}>{latest?.decision || "—"}</span></div>
-          <div><span className="muted">auth</span> <span className="small">{latest?.required_authentication || "—"}</span></div>
+          <div className="bio-row"><span className="muted">risk level</span> <span className="pill" style={{ color, borderColor: color, background: `${color}15` }}>{level}</span></div>
+          <div className="bio-row"><span className="muted">decision</span> <span className="small" style={{ color: latest?.decision === "ALLOW" ? "var(--green)" : "var(--red)" }}>{latest?.decision || "—"}</span></div>
+          <div className="bio-row"><span className="muted">auth</span> <span className="small">{latest?.required_authentication || "—"}</span></div>
         </div>
       </div>
 
       {/* §34 — 6 Behavioral Metrics */}
+      <div className="risk-section-lbl">session signals</div>
       <div className="behavioral-metrics-grid">
         {metrics.map((m) => (
           <div key={m.label} className="behavioral-metric">
             <div className="behavioral-metric-val" style={{ color: m.color }}>{m.value}</div>
             <div className="behavioral-metric-lbl">{m.label}</div>
+            <div className="behavioral-metric-bar"><i style={{ width: `${m.pct}%`, background: m.color, boxShadow: `0 0 6px ${m.color}` }} /></div>
           </div>
         ))}
       </div>
@@ -403,12 +408,14 @@ export default function BehavioralRiskDashboard({ userId }) {
       )}
 
       {/* Demo buttons */}
-      <div className="chat-actions" style={{ marginTop: 10, marginBottom: 6 }}>
+      <div className="risk-section-lbl">simulation</div>
+      <div className="chat-actions" style={{ marginTop: 4, marginBottom: 6 }}>
         <button className="btn" onClick={() => sendEvent("normal")} disabled={loading}><IconCheck size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Normal behavior</button>
         <button className="btn" onClick={() => sendEvent("anomalous")} disabled={loading} style={{ background: "linear-gradient(135deg, var(--red), var(--orange))" }}><IconAlert size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Anomalous behavior</button>
       </div>
 
       {/* Live events feed */}
+      <div className="risk-section-lbl">live events</div>
       <ul className="feed" style={{ maxHeight: 200 }}>
         {behavior.length === 0 && <li className="muted">No behavioral events. Click a button above.</li>}
         {behavior.slice(0, 10).map((b, i) => (
@@ -416,7 +423,7 @@ export default function BehavioralRiskDashboard({ userId }) {
             <span className="cat-tag" style={{ background: riskColor(b.risk_level) }}>{b.risk_level || "—"}</span>
             <div className="feed-body">
               <div className="feed-label">{b.decision || "—"} (score {b.risk_score || 0})</div>
-              <div className="feed-meta">{b.user_id} · {Math.round((b.behavior_anomaly_score || 0) * 100)}% anomaly · {b.resource_risk || "?"}</div>
+              <div className="feed-meta">{b.user_id} · {Math.round((b.behavior_anomaly_score || 0) * 100)}% anomaly · {b.resource_risk || "?"} · {b.ts ? fmtTime(b.ts) : "—"}</div>
             </div>
           </li>
         ))}
