@@ -695,7 +695,11 @@ summary:focus-visible,
 .shap-impostor .shap-val { color: var(--red); text-align: right; }
 
 /* ==========================================================================
-   BOOT LOADER — one-shot terminal power-on sequence (scan-log style)
+   BOOT LOADER — "Dual-Layer Gate" power-on sequence
+   The product story in ~2s: the shield draws itself, two firewall layers
+   slide in and lock, packets stream through both layers (one is blocked and
+   deflected), then READY → handoff to the dashboard. Pure transform/opacity,
+   skippable (click / any key), honours prefers-reduced-motion.
    ========================================================================== */
 .boot {
   position: fixed;
@@ -707,7 +711,8 @@ summary:focus-visible,
   background: var(--bg-1);
   overflow: hidden;
   opacity: 1;
-  transition: opacity 0.6s ease, visibility 0.6s;
+  transition: opacity 0.45s ease, visibility 0.45s;
+  cursor: pointer;
 }
 .boot-leave { opacity: 0; visibility: hidden; pointer-events: none; }
 
@@ -729,84 +734,136 @@ summary:focus-visible,
   font-family: var(--mono);
 }
 
-/* --- terminal window --- */
-.boot-term {
-  text-align: left;
-  background: #0f1524;
-  border: 1px solid var(--panel-edge-hot);
-  border-radius: 8px;
-  box-shadow: 0 0 40px rgba(59, 130, 246,0.105), inset 0 0 60px rgba(59, 130, 246,0.022);
-  overflow: hidden;
-  animation: termIn 0.4s ease backwards;
+/* --- the gate stage: track + layers + shield + packets --- */
+.gate-visual {
+  position: relative;
+  height: 190px;
+  margin-bottom: 18px;
 }
-@keyframes termIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+
+/* packet track — a thin light rail the dots travel along */
+.gate-track {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.35) 20%, rgba(96, 165, 250, 0.35) 80%, transparent);
+}
+
+/* the two firewall layers — glass bars that slide in and lock */
+.gate-layer {
+  position: absolute;
+  top: 14%; bottom: 14%;
+  width: 7px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.05), rgba(96, 165, 250, 0.5), rgba(59, 130, 246, 0.05));
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.25);
+  opacity: 0;
+}
+.gate-layer-1 { left: 22%; animation: layerInL 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) 0.45s forwards; }
+.gate-layer-2 { right: 22%; animation: layerInR 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) 0.6s forwards; }
+@keyframes layerInL {
+  from { opacity: 0; transform: translateX(-56px) scaleY(0.6); }
   to   { opacity: 1; transform: none; }
 }
-.boot-term-bar {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px;
-  background: #16203a;
-  border-bottom: 1px solid var(--panel-edge);
+@keyframes layerInR {
+  from { opacity: 0; transform: translateX(56px) scaleY(0.6); }
+  to   { opacity: 1; transform: none; }
 }
-.bt-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(59, 130, 246,0.188); }
-.bt-dot:first-child { background: rgba(248, 113, 113,0.413); }
-.bt-dot:nth-child(2) { background: rgba(251, 191, 36,0.413); }
-.bt-dot:nth-child(3) { background: rgba(52, 211, 153,0.413); }
-.bt-title {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-left: 8px; font-size: 10.5px; letter-spacing: 0.6px; color: var(--text-dim);
-}
-.bt-pct { margin-left: auto; font-size: 10.5px; color: var(--cyan); }
 
-.boot-term-body {
-  padding: 12px 14px 14px;
-  font-size: 11.5px;
-  line-height: 1.75;
-  min-height: 264px;
+/* lock flash on each layer after it lands */
+.gate-flash {
+  position: absolute;
+  top: 14%; bottom: 14%;
+  width: 26px;
+  border-radius: 8px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.4), transparent 70%);
+  opacity: 0;
 }
-.bt-cmd { color: var(--text); margin-bottom: 4px; }
-.bt-cmd::before { content: "$ "; color: var(--green); }
-.bt-line {
-  display: flex; align-items: baseline; gap: 7px;
-  white-space: nowrap; overflow: hidden;
-  color: var(--text-dim);
-  animation: bootLineIn 0.18s ease backwards;
-}
-@keyframes bootLineIn {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.bt-ts { color: var(--muted); font-size: 10px; }
-.bt-mod { color: var(--cyan); }
-.bt-active .bt-mod { text-shadow: 0 0 8px rgba(59, 130, 246,0.375); }
-.bt-what { color: var(--text-dim); }
-.bt-dots {
-  flex: 1; height: 0; min-width: 12px;
-  transform: translateY(-3px);
-  border-bottom: 1px dotted rgba(59, 130, 246,0.188);
-}
-.bt-ok {
-  color: var(--green); font-weight: 600;
-  text-shadow: 0 0 10px rgba(52, 211, 153,0.3);
-}
-.bt-final .bt-final-txt {
-  color: var(--green); font-weight: 700; letter-spacing: 0.4px;
-  text-shadow: 0 0 12px rgba(52, 211, 153,0.375);
-}
-.bt-cursor { color: var(--cyan); animation: bootBlink 0.8s steps(1) infinite; }
-@keyframes bootBlink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+.gate-flash-1 { left: calc(22% - 10px); animation: gateFlash 0.5s ease-out 0.8s; }
+.gate-flash-2 { right: calc(22% - 10px); animation: gateFlash 0.5s ease-out 0.95s; }
+@keyframes gateFlash { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0; } }
 
-.boot-bar { margin: 0; height: 3px; background: rgba(59, 130, 246,0.06); }
+/* the shield — stroke-draw entrance, then a settled glow */
+.gate-shield {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 108px; height: 108px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 18px rgba(59, 130, 246, 0.35));
+}
+.gate-shield .draw {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: shieldDraw 0.5s ease-out 0.05s forwards;
+}
+.gate-shield .heads { opacity: 0; animation: headsIn 0.35s ease-out 0.5s forwards; }
+.gate-shield .eyes  { opacity: 0; animation: headsIn 0.25s ease-out 0.75s forwards; }
+@keyframes shieldDraw { to { stroke-dashoffset: 0; } }
+@keyframes headsIn { to { opacity: 1; } }
+
+/* packets — glowing dots streaming left→right through both layers;
+   each briefly dims while a layer inspects it */
+.gate-packet {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 7px; height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--cyan-soft);
+  box-shadow: 0 0 10px var(--cyan), 0 0 22px rgba(59, 130, 246, 0.4);
+  opacity: 0;
+  animation: packetFlow 1.15s linear calc(0.85s + var(--i) * 0.14s) forwards;
+}
+@keyframes packetFlow {
+  0%   { left: -2%;  opacity: 0; }
+  8%   { opacity: 1; }
+  26%  { opacity: 0.35; }
+  34%  { opacity: 1; }
+  66%  { opacity: 0.35; }
+  74%  { opacity: 1; }
+  96%  { opacity: 1; }
+  100% { left: 102%; opacity: 0; }
+}
+
+/* the blocked packet — passes layer 1, is rejected at layer 2: flashes red
+   and deflects below the track. The one dramatic beat. */
+.gate-packet-bad {
+  animation: packetBlock 1.15s linear calc(0.85s + var(--i) * 0.14s) forwards;
+}
+@keyframes packetBlock {
+  0%   { left: -2%;  opacity: 0; }
+  8%   { opacity: 1; }
+  26%  { opacity: 0.35; }
+  34%  { opacity: 1; }
+  66%  { left: 66%; opacity: 1; }
+  72%  { background: var(--red); box-shadow: 0 0 12px var(--red), 0 0 26px rgba(248, 113, 113, 0.45); transform: translateY(2px); }
+  88%  { left: 76%; transform: translateY(26px); opacity: 0.85; }
+  100% { left: 79%; transform: translateY(44px); opacity: 0; }
+}
+
+/* readout — step ticker + percent */
+.gate-readout {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11px; color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.gate-readout b { color: var(--cyan-soft); font-weight: 500; }
+.gate-readout .gate-pct { color: var(--text-dim); font-size: 12px; letter-spacing: 0; }
+.gate-readout.gate-ready b { color: var(--green); }
+
+.boot-bar { margin: 0; height: 3px; border-radius: 2px; overflow: hidden; background: rgba(59, 130, 246, 0.06); }
 .boot-bar span {
   display: block; height: 100%;
-  background: var(--cyan);
-  box-shadow: 0 0 12px rgba(59, 130, 246,0.45);
-  transition: width 0.16s linear;
+  background: linear-gradient(90deg, var(--cyan), var(--cyan-soft));
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
+  transition: width 0.2s ease-out;
 }
 
 .boot-title {
-  margin-top: 20px;
+  margin-top: 22px;
   font-family: var(--sans);
   font-size: 20px;
   font-weight: 700;
@@ -814,7 +871,26 @@ summary:focus-visible,
   text-transform: uppercase;
   color: var(--text);
 }
-.boot-title span { color: var(--cyan); text-shadow: 0 0 14px rgba(59, 130, 246,0.375); }
+.boot-title span { color: var(--cyan); text-shadow: 0 0 14px rgba(59, 130, 246, 0.375); }
+
+.gate-skiphint {
+  margin-top: 10px;
+  font-size: 9.5px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* Reduced motion: static composition — shield drawn, layers locked, no
+   packets, no flashes; the JS stepper also accelerates. */
+@media (prefers-reduced-motion: reduce) {
+  .gate-layer, .gate-flash, .gate-packet, .gate-packet-bad { animation: none !important; }
+  .gate-layer { opacity: 1; }
+  .gate-shield .draw { stroke-dashoffset: 0; animation: none !important; }
+  .gate-shield .heads, .gate-shield .eyes { opacity: 1; animation: none !important; }
+  .boot-bar span { transition: none; }
+}
 
 /* ==========================================================================
    REDUCED MOTION (a11y)
