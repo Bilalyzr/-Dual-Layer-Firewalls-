@@ -338,29 +338,86 @@ summary:focus-visible,
 .small { font-size: 11px; }
 
 /* ==========================================================================
-   CHAT PANEL
+   CHAT PANEL — messenger layout: avatar chip + bubble per message
    ========================================================================== */
 .chat-log {
   max-height: 340px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
   padding-right: 4px;
+  scroll-behavior: smooth;
 }
 .msg {
-  position: relative;
-  border: 1px solid rgba(96, 165, 250, 0.12);
-  border-radius: 10px;
-  padding: 10px 14px;
-  background: rgba(8, 14, 30, 0.7);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 96%;
   animation: msgIn 0.35s ease;
 }
 @keyframes msgIn {
-  from { opacity: 0; transform: translateX(-8px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
+
+/* avatar chip — who is speaking */
+.msg-avatar {
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-top: 2px;
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.28), rgba(29, 78, 216, 0.14));
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  color: var(--cyan-soft);
+}
+.msg-user .msg-avatar {
+  background: rgba(96, 165, 250, 0.07);
+  border-color: var(--panel-edge);
+  color: var(--text-dim);
+  font: 600 11px var(--mono);
+}
+.msg-system .msg-avatar {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: var(--yellow);
+}
+.msg-avatar-busy { animation: avatarPulse 1.2s ease-in-out infinite; }
+@keyframes avatarPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
+  50%      { box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.22); }
+}
+
+/* bubble — the speech body */
+.msg-content {
+  flex: 1; min-width: 0;
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  background: rgba(10, 16, 30, 0.7);
+  border-radius: 12px;
+  border-top-left-radius: 4px;
+  padding: 10px 14px;
+}
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-content {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 4px;
+  border-color: rgba(96, 165, 250, 0.2);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(11, 16, 28, 0.75));
+}
+.msg-blocked .msg-content {
+  border-color: rgba(248, 113, 113, 0.32);
+  border-left: 2px solid var(--red);
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.09), rgba(10, 16, 30, 0.7));
+  box-shadow: var(--glow-red);
+  animation: alertFlash 0.6s ease;
+}
+@keyframes alertFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.45); }
+  100% { box-shadow: var(--glow-red); }
+}
+
 .msg-role {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -385,29 +442,47 @@ summary:focus-visible,
   padding-top: 6px;
   border-top: 1px dashed rgba(96, 165, 250, 0.1);
 }
-.msg-assistant { border-left: 2px solid #a78bfa; border-left: 2px solid var(--cyan); box-shadow: inset 3px 0 12px rgba(59, 130, 246,0.06); }
-.msg-user      { border-left: 2px solid var(--blue); }
-.msg-system    { border-left: 2px solid var(--yellow); }
-.msg-blocked {
-  border: 1px solid rgba(248, 113, 113,0.3);
-  border-left: 2px solid var(--red);
-  background: linear-gradient(90deg, rgba(248, 113, 113,0.09), rgba(8, 14, 30, 0.7));
-  box-shadow: var(--glow-red);
-  animation: msgIn 0.35s ease, alertFlash 0.6s ease;
-}
-@keyframes alertFlash {
-  0%   { box-shadow: 0 0 0 0 rgba(248, 113, 113,0.45); }
-  100% { box-shadow: var(--glow-red); }
-}
 
+/* composer — input and send live in one bar */
+.chat-composer {
+  display: flex; align-items: flex-end; gap: 10px;
+  background: #0a0f1c;
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  padding: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.chat-composer:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+.chat-composer textarea {
+  flex: 1;
+  background: transparent; border: 0; outline: none;
+  resize: vertical;
+  color: var(--text);
+  font-family: var(--mono); font-size: 13px; line-height: 1.55;
+  padding: 6px 8px;
+}
+.chat-composer textarea::placeholder { color: var(--muted); }
+.composer-send {
+  flex: 0 0 auto;
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; font-size: 15px;
+}
+/* Button row shared with the demo trigger buttons (BehavioralRiskDashboard). */
+.chat-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+
+/* Text input skin — reused by the LoginScreen username/password fields. */
 .chat-input {
   width: 100%;
   background: #0a0f1c;
   color: var(--text);
-  border: 1px solid var(--panel-edge); border-radius: var(--radius);
+  border: 1px solid var(--panel-edge);
   border-radius: 10px;
   padding: 12px 14px;
-  resize: vertical;
   font: inherit;
   font-family: var(--mono);
   font-size: 13px;
@@ -416,10 +491,10 @@ summary:focus-visible,
 .chat-input:focus {
   outline: none;
   border-color: var(--cyan);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246,0.09), inset 0 0 20px rgba(59, 130, 246,0.03);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.09);
 }
 .chat-input::placeholder { color: var(--muted); }
-.chat-actions { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+
 
 .btn {
   position: relative;
@@ -1075,15 +1150,8 @@ summary:focus-visible,
    UI FINE-TUNE PASS — polish on the existing theme/layout
    ========================================================================== */
 /* Chat: user speaks from the right (standard chat UX), bots from the left */
-.msg-user {
-  align-self: flex-end;
-  max-width: 88%;
-  border-left: 1px solid rgba(96, 165, 250, 0.12);
-  border-right: 2px solid var(--blue);
-  background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(20,20,19,0.7));
-}
-.msg-assistant, .msg-system { max-width: 95%; }
-.chat-log { scroll-behavior: smooth; }
+.msg-user { align-self: flex-end; max-width: 88%; }
+.msg-assistant, .msg-system { max-width: 96%; }
 
 /* Empty state before the first message */
 .chat-empty {

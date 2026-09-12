@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
-import { IconShieldCheck, MSG_ICONS } from "./Icons";
+import { IconAlert, IconShieldCheck, MSG_ICONS } from "./Icons";
 
 const LLM_LABELS = {
   "local-fallback": "Local Qwen",
@@ -217,7 +217,8 @@ export default function ChatPanel({ userId }) {
         onCancel={() => setStepUp(false)}
       />
       <div className="panel-head">
-        <h2>LLM Chat <small>(behind AI Firewall)</small></h2>
+        <h2>LLM Chat <small>behind AI Firewall</small></h2>
+        <span className="pill pill-ok">Protected</span>
       </div>
 
       <div className="chat-log" ref={logRef}>
@@ -238,6 +239,14 @@ export default function ChatPanel({ userId }) {
             ? Math.max(0, m.totalMs - m.llm.latencyMs) : null;
           return (
           <div key={i} className={`msg msg-${m.role}${m.blocked ? " msg-blocked" : ""}`}>
+            <div className="msg-avatar" aria-hidden="true">
+              {m.role === "assistant"
+                ? <IconShieldCheck size={13} />
+                : m.role === "user"
+                ? (userId || "?").slice(0, 1).toUpperCase()
+                : <IconAlert size={12} />}
+            </div>
+            <div className="msg-content">
             <div className="msg-role">
               {m.role}
               {m.role === "assistant" && m.llm && (
@@ -285,41 +294,51 @@ export default function ChatPanel({ userId }) {
                 </span>
               </div>
             )}
+            </div>
           </div>
           );
         })}
         {busy && (
           <div className="msg msg-assistant">
-            <div className="msg-role">assistant</div>
-            <div className="reply-loader" role="status" aria-label="inspecting prompt through firewall layers">
-              <div className="rl-head">
-                <span className="rl-orb" aria-hidden="true" />
-                <span className="shimmer-text">{stage < PIPELINE.length - 1
-                  ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
-                  : "answering"}</span>
-                <span className="pl-dots"><i /><i /><i /></span>
-              </div>
-              <div className="rl-skel" aria-hidden="true">
-                <i style={{ width: "92%" }} />
-                <i style={{ width: "76%" }} />
-                <i style={{ width: "54%" }} />
+            <div className="msg-avatar msg-avatar-busy" aria-hidden="true"><IconShieldCheck size={13} /></div>
+            <div className="msg-content">
+              <div className="msg-role">assistant</div>
+              <div className="reply-loader" role="status" aria-label="inspecting prompt through firewall layers">
+                <div className="rl-head">
+                  <span className="rl-orb" aria-hidden="true" />
+                  <span className="shimmer-text">{stage < PIPELINE.length - 1
+                    ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
+                    : "answering"}</span>
+                  <span className="pl-dots"><i /><i /><i /></span>
+                </div>
+                <div className="rl-skel" aria-hidden="true">
+                  <i style={{ width: "92%" }} />
+                  <i style={{ width: "76%" }} />
+                  <i style={{ width: "54%" }} />
+                </div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <textarea
-        className="chat-input"
-        placeholder="Type a prompt…"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={3}
-      />
-      <div className="chat-actions">
-        <button className="btn" onClick={send} disabled={busy || !input.trim()}>
-          {busy ? "Sending…" : "Send →"}
+      <div className="chat-composer">
+        <textarea
+          className="composer-text"
+          placeholder="Type a prompt — Enter to send, Shift+Enter for newline"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={2}
+        />
+        <button
+          className="btn composer-send"
+          onClick={send}
+          disabled={busy || !input.trim()}
+          aria-label="Send prompt"
+          title="Send prompt"
+        >
+          {busy ? "…" : "→"}
         </button>
       </div>
     </section>
