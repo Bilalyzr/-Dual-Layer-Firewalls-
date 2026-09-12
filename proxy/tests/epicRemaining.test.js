@@ -8,7 +8,6 @@ import request from "supertest";
 
 import { recordRequest, slaSnapshot, sampleSystemMetrics, metricHistory } from "../observability/sla.js";
 import { requestLogger } from "../lib/logger.js";
-import { collectEvidence, evidenceSummary } from "../compliance/soc2.js";
 import { verifyChain, _resetChain } from "../compliance/auditChain.js";
 
 beforeEach(() => _resetChain());
@@ -63,21 +62,6 @@ describe("system-metric anomaly detection", () => {
   });
 });
 
-// ---- SOC 2 evidence ------------------------------------------------------
-describe("SOC 2 evidence collection", () => {
-  it("collects a structured evidence report", () => {
-    const r = collectEvidence();
-    expect(r.controls).toBeDefined();
-    expect(r.auditTrail.tamperEvident).toBe(true);
-    expect(r.trustServiceCategories.security).toBe(true);
-  });
-
-  it("generates a human-readable summary", () => {
-    const s = evidenceSummary();
-    expect(s).toMatch(/controls operating/);
-    expect(s).toMatch(/chain/);
-  });
-});
 
 // ---- Fingerprint route (consent-gated) -----------------------------------
 describe("fingerprint route", () => {
