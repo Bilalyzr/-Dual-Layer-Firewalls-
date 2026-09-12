@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
-const RISK_COLORS = { LOW: "#30d158", MEDIUM: "#ffcc00", HIGH: "#ff3b30" };
+const RISK_COLORS = { LOW: "#34d399", MEDIUM: "#fbbf24", HIGH: "#f87171" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
 
 /**
@@ -124,7 +124,7 @@ export default function BehavioralRiskDashboard({ userId }) {
   const areaPath = smoothPath
     ? `${smoothPath} L ${xAt(n - 1).toFixed(1)} ${yAt(0)} L ${xAt(0).toFixed(1)} ${yAt(0)} Z`
     : "";
-  const trendColor = RISK_COLORS[lastPoint?.level] || "#30d158";
+  const trendColor = RISK_COLORS[lastPoint?.level] || "#34d399";
   const fmt = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
@@ -231,13 +231,13 @@ export default function BehavioralRiskDashboard({ userId }) {
             {/* gridlines + y labels */}
             {[100, 70, 35, 0].map((v) => (
               <g key={v}>
-                <line x1={PL} x2={CW - PR} y1={yAt(v)} y2={yAt(v)} stroke="#2f2e2c" strokeWidth="1" strokeDasharray={v === 100 || v === 0 ? "none" : "3 4"} />
+                <line x1={PL} x2={CW - PR} y1={yAt(v)} y2={yAt(v)} stroke="#1e2a44" strokeWidth="1" strokeDasharray={v === 100 || v === 0 ? "none" : "3 4"} />
                 <text x={PL - 6} y={yAt(v) + 3} textAnchor="end" className="rc-y">{v}</text>
               </g>
             ))}
 
             {/* the BLOCK threshold — where the firewall cuts */}
-            <line x1={PL} x2={CW - PR} y1={yAt(55)} y2={yAt(55)} stroke="#d97757" strokeWidth="1.3" strokeDasharray="6 4" />
+            <line x1={PL} x2={CW - PR} y1={yAt(55)} y2={yAt(55)} stroke="#60a5fa" strokeWidth="1.3" strokeDasharray="6 4" />
             <text x={CW - PR} y={yAt(55) - 4} textAnchor="end" className="rc-th">BLOCK 55</text>
 
             {/* the curve + its area */}
@@ -247,8 +247,8 @@ export default function BehavioralRiskDashboard({ userId }) {
             {/* points: red = blocked, green = allowed; hover = full detail */}
             {riskHistory.map((p, i) => (
               <g key={i}>
-                {p.blocked && <circle cx={xAt(i)} cy={yAt(p.score)} r="5.5" fill="none" stroke="#ff3b30" strokeWidth="1" opacity="0.45" />}
-                <circle cx={xAt(i)} cy={yAt(p.score)} r={p.blocked ? 3 : 2.2} fill={p.blocked ? "#ff3b30" : "#30d158"} />
+                {p.blocked && <circle cx={xAt(i)} cy={yAt(p.score)} r="5.5" fill="none" stroke="#f87171" strokeWidth="1" opacity="0.45" />}
+                <circle cx={xAt(i)} cy={yAt(p.score)} r={p.blocked ? 3 : 2.2} fill={p.blocked ? "#f87171" : "#34d399"} />
                 <circle cx={xAt(i)} cy={yAt(p.score)} r="9" fill="transparent" className="rc-hit">
                   <title>{`${p.blocked ? "BLOCKED" : "allowed"} · risk ${p.score}/100 · ${fmt(p.ts)}`}</title>
                 </circle>
@@ -273,9 +273,9 @@ export default function BehavioralRiskDashboard({ userId }) {
             <span><i className="band-key" style={{ background: "rgba(255,59,48,0.5)" }} /> HIGH 70+</span>
             <span><i className="band-key" style={{ background: "rgba(255,204,0,0.5)" }} /> MEDIUM 35–70</span>
             <span><i className="band-key" style={{ background: "rgba(48,209,88,0.45)" }} /> LOW &lt;35</span>
-            <span style={{ color: "#ff3b30" }}>● blocked</span>
-            <span style={{ color: "#30d158" }}>● allowed</span>
-            <span style={{ color: "#d97757" }}>– – block threshold</span>
+            <span style={{ color: "#f87171" }}>● blocked</span>
+            <span style={{ color: "#34d399" }}>● allowed</span>
+            <span style={{ color: "#60a5fa" }}>– – block threshold</span>
           </div>
         </div>
       )}

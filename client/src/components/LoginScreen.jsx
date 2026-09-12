@@ -49,8 +49,8 @@ export default function LoginScreen({ onLogin }) {
     }
   };
 
-  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#ff3b30"
-    : result?.behavioral?.risk_level === "MEDIUM" ? "#ffcc00" : "#30d158";
+  const riskColor = result?.behavioral?.risk_level === "HIGH" ? "#f87171"
+    : result?.behavioral?.risk_level === "MEDIUM" ? "#fbbf24" : "#34d399";
 
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
@@ -58,7 +58,7 @@ export default function LoginScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-1)" }}>
       <div className="panel" style={{ width: 400, maxWidth: "90vw" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <span style={{ filter: "drop-shadow(0 0 14px rgba(217,119,87,0.45))" }}><Logo idPrefix="login" size={52} /></span>
+          <span style={{ filter: "drop-shadow(0 0 14px rgba(59,130,246,0.45))" }}><Logo idPrefix="login" size={52} /></span>
           <h2 style={{ fontSize: 14, letterSpacing: 2, textTransform: "uppercase", marginTop: 8 }}>
             Orthrus AI Firewall
           </h2>
@@ -100,8 +100,8 @@ export default function LoginScreen({ onLogin }) {
         )}
 
         {result?.success && (
-          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(163,201,121,0.12)", border: "1px solid rgba(22,163,74,0.35)" }}>
-            <div style={{ color: "#30d158", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.35)" }}>
+            <div style={{ color: "#34d399", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconCheck size={14} /> Login Successful</div>
             <div className="small muted" style={{ marginTop: 4 }}>
               Risk: {result.behavioral?.risk_score}/100 ({result.behavioral?.risk_level})
             </div>

@@ -19,9 +19,9 @@ export default function Logo({ idPrefix = "dlf", className = "logo", size }) {
       <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", height: "100%" }}>
         <defs>
           <linearGradient id={`${p}-terra`} x1="32" y1="6" x2="32" y2="58" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="#e08d6d" />
-            <stop offset="0.55" stopColor="#d97757" />
-            <stop offset="1" stopColor="#b85f3f" />
+            <stop offset="0" stopColor="#7dd3fc" />
+            <stop offset="0.55" stopColor="#3b82f6" />
+            <stop offset="1" stopColor="#1d4ed8" />
           </linearGradient>
           <filter id={`${p}-glow`} x="-30%" y="-30%" width="160%" height="160%">
             <feGaussianBlur stdDeviation="1.6" result="b" />
@@ -35,7 +35,7 @@ export default function Logo({ idPrefix = "dlf", className = "logo", size }) {
         {/* shield — the firewall, warm charcoal with a terracotta rim */}
         <path
           d="M32 4 L56 12 V30 C56 44 46 54 32 60 C18 54 8 44 8 30 V12 Z"
-          fill="#1f1e1d"
+          fill="#0d1322"
           stroke={`url(#${p}-terra)`}
           strokeWidth="2.5"
           strokeLinejoin="round"
@@ -52,12 +52,12 @@ export default function Logo({ idPrefix = "dlf", className = "logo", size }) {
             fill={`url(#${p}-terra)`}
           />
           {/* cream eyes — always watching */}
-          <circle cx="23.5" cy="20.5" r="1.7" fill="#f4f3ee" />
-          <circle cx="40.5" cy="20.5" r="1.7" fill="#f4f3ee" />
+          <circle cx="23.5" cy="20.5" r="1.7" fill="#e6eaf2" />
+          <circle cx="40.5" cy="20.5" r="1.7" fill="#e6eaf2" />
         </g>
 
         {/* central spine — the divide between the two layers */}
-        <line x1="32" y1="12" x2="32" y2="46" stroke="#f4f3ee" strokeWidth="1.1" opacity="0.35" />
+        <line x1="32" y1="12" x2="32" y2="46" stroke="#e6eaf2" strokeWidth="1.1" opacity="0.35" />
       </svg>
     </span>
   );
