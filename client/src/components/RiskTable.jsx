@@ -11,7 +11,7 @@ import { IconAlert, IconCheck } from "./Icons.jsx";
 const RISK_COLORS = { LOW: "#34d399", MEDIUM: "#fbbf24", HIGH: "#f87171" };
 
 export default function RiskTable({ onFocusUser = null }) {
-  const { behavior } = useThreatStream(50);
+  const { behavior, connected } = useThreatStream(50);
   const [selectedUser, setSelectedUser] = useState(null);
 
   // Deduplicate by user (keep most recent)
@@ -27,7 +27,13 @@ export default function RiskTable({ onFocusUser = null }) {
         <h2>User Risk Table</h2>
       </div>
       {rows.length === 0 ? (
-        <p className="muted small">No behavioral events yet.</p>
+        <div className="feed-empty">
+          {!connected ? (
+            <><span className="dot dot-wake" /> connecting to live stream…</>
+          ) : (
+            "No behavioral events yet — trigger one from Behavioral Risk Analysis."
+          )}
+        </div>
       ) : (
         <table className="risk-table">
           <thead>

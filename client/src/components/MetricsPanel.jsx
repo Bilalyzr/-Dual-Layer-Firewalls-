@@ -5,6 +5,7 @@
  * requires before Tier 2 investment. Replaces PRD §6 design targets with facts.
  */
 import { useEffect, useState } from "react";
+import PanelSkeleton from "./PanelSkeleton";
 
 function Stat({ label, value, sub, good }) {
   return (
@@ -20,19 +21,26 @@ function Stat({ label, value, sub, good }) {
 
 export default function MetricsPanel() {
   const [m, setM] = useState(null);
+  const [err, setErr] = useState(false);
 
   useEffect(() => {
     const load = () =>
       fetch("/api/metrics")
         .then((r) => r.json())
-        .then(setM)
-        .catch(() => setM(null));
+        .then((d) => { setM(d); setErr(false); })
+        .catch(() => setErr(true));
     load();
     const id = setInterval(load, 8000);
     return () => clearInterval(id);
   }, []);
 
-  if (!m) return <section className="panel p-metrics"><p className="muted">loading metrics…</p></section>;
+  if (!m) return (
+    <section className="panel p-metrics">
+      <div className="panel-head"><h2>Benchmark</h2></div>
+      <PanelSkeleton lines={3} label="loading benchmark metrics" />
+      {err && <p className="small muted" style={{ marginTop: 8 }}>engine unreachable — retrying…</p>}
+    </section>
+  );
 
   const c = m.classifier || {};
   const ready = c.ready === true;

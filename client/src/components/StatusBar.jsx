@@ -23,7 +23,15 @@ export default function StatusBar() {
     return () => clearInterval(id);
   }, []);
 
-  if (!s) return <div className="statusbar loading">loading status…</div>;
+  if (!s) return (
+    <div className="statusbar loading" role="status" aria-label="waking the API">
+      <span className="sb-item">
+        <span className="dot dot-wake" />
+        <b>API</b> waking…
+      </span>
+      <span className="sb-item muted small">first load can take ~30s on free-tier hosting</span>
+    </div>
+  );
 
   const Dot = ({ ok, label }) => (
     <span className="sb-item">

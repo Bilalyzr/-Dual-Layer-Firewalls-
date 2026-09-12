@@ -113,7 +113,17 @@ export default function ThreatFeed({ focusUser = null, onClearFocus = null }) {
       )}
 
       <ul className="feed">
-        {shown.length === 0 && <li className="muted">{threats.length === 0 ? "No threats detected yet." : "No threats match the current filter."}</li>}
+        {shown.length === 0 && (
+          <li className="feed-empty">
+            {!connected ? (
+              <><span className="dot dot-wake" /> connecting to live stream…</>
+            ) : threats.length === 0 ? (
+              "No threats detected — the firewall is quiet."
+            ) : (
+              "No threats match the current filter."
+            )}
+          </li>
+        )}
         {shown.map((t, i) => {
           const cat = t.category || "LLM01";
           const ts = t.ts ? new Date(t.ts) : null;

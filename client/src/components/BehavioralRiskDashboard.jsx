@@ -34,6 +34,12 @@ export default function BehavioralRiskDashboard({ userId }) {
   const [showDecision, setShowDecision] = useState(false);
   const [riskHistory, setRiskHistory] = useState([]);
   const [stats, setStats] = useState(null);
+  // Chart UX: hover crosshair index, range filter (0=all / 15 / 60 minutes),
+  // and a pause that freezes history + the live pulse (a11y for flashing).
+  const [hover, setHover] = useState(null);
+  const [range, setRange] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const svgRef = useRef(null);
 
   const latest = behavior[0] || null;
 
@@ -42,7 +48,7 @@ export default function BehavioralRiskDashboard({ userId }) {
   // land as points (the old value-dep silently dropped them). Injection
   // blocks are flagged so the line can color them red vs benign green.
   useEffect(() => {
-    if (!latest || latest.risk_score == null) return;
+    if (!latest || latest.risk_score == null || paused) return;
     const ts = latest.ts ? new Date(latest.ts).getTime() : Date.now();
     const blocked = latest.decision === "RESTRICT" || latest.decision === "DENY";
     const injection = (latest.reasons || []).some((r) => String(r).includes("Prompt injection"));
@@ -55,7 +61,7 @@ export default function BehavioralRiskDashboard({ userId }) {
         blocked: blocked || injection,
       }].slice(-30);
     });
-  }, [latest]);
+  }, [latest, paused]);
 
   // §25 — Command Center aggregates: poll /api/behavior/stats every 5s (and on new events).
   useEffect(() => {
@@ -90,27 +96,31 @@ export default function BehavioralRiskDashboard({ userId }) {
   const authConfidence = latest ? Math.max(0, 100 - score) : 100;
 
   const metrics = [
-    { label: "Behavioral Deviation", value: `${anomalyPct}%`, color: anomalyPct > 60 ? "var(--bad)" : anomalyPct > 30 ? "var(--warn)" : "var(--ok)" },
-    { label: "Device Trust", value: `${deviceTrustPct}%`, color: deviceTrustPct > 70 ? "var(--ok)" : deviceTrustPct > 40 ? "var(--warn)" : "var(--bad)" },
-    { label: "Location Trust", value: `${locationTrustPct}%`, color: locationTrustPct > 70 ? "var(--ok)" : locationTrustPct > 40 ? "var(--warn)" : "var(--bad)" },
-    { label: "Resource Risk", value: (latest?.resource_risk || "low").toUpperCase(), color: latest?.resource_risk === "critical" ? "var(--bad)" : latest?.resource_risk === "high" ? "var(--bad)" : latest?.resource_risk === "medium" ? "var(--warn)" : "var(--ok)" },
-    { label: "Auth Confidence", value: `${authConfidence}%`, color: authConfidence > 70 ? "var(--ok)" : authConfidence > 40 ? "var(--warn)" : "var(--bad)" },
+    { label: "Behavioral Deviation", value: `${anomalyPct}%`, color: anomalyPct > 60 ? "var(--red)" : anomalyPct > 30 ? "var(--yellow)" : "var(--green)" },
+    { label: "Device Trust", value: `${deviceTrustPct}%`, color: deviceTrustPct > 70 ? "var(--green)" : deviceTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
+    { label: "Location Trust", value: `${locationTrustPct}%`, color: locationTrustPct > 70 ? "var(--green)" : locationTrustPct > 40 ? "var(--yellow)" : "var(--red)" },
+    { label: "Resource Risk", value: (latest?.resource_risk || "low").toUpperCase(), color: latest?.resource_risk === "critical" ? "var(--red)" : latest?.resource_risk === "high" ? "var(--red)" : latest?.resource_risk === "medium" ? "var(--yellow)" : "var(--green)" },
+    { label: "Auth Confidence", value: `${authConfidence}%`, color: authConfidence > 70 ? "var(--green)" : authConfidence > 40 ? "var(--yellow)" : "var(--red)" },
     { label: "Session Risk", value: level, color: color },
   ];
 
   // Chart: risk history as an area sparkline — the line is the risk score,
   // points are colored by verdict (red = injection block, green = allowed).
-  const lastPoint = riskHistory[riskHistory.length - 1];
 
   // ---- §36 chart geometry: a real coordinate plane, not a stretched svg ----
   const CW = 520, CH = 170, PL = 38, PR = 14, PT = 12, PB = 20;
-  const n = riskHistory.length;
+  // Range filter (all / 15m / 1h); falls back to the full window when the
+  // selected range holds fewer than two points.
+  const ranged = range === 0 ? riskHistory : riskHistory.filter((p) => p.ts >= Date.now() - range * 60000);
+  const hist = ranged.length > 1 ? ranged : riskHistory;
+  const n = hist.length;
+  const lastPoint = hist[n - 1];
   const xAt = (i) => PL + (n > 1 ? (i * (CW - PL - PR)) / (n - 1) : 0);
   const yAt = (score) => PT + ((100 - score) * (CH - PT - PB)) / 100;
   // Catmull-Rom -> cubic Bezier for a smooth curve through the points
   const smoothPath = (() => {
     if (n < 2) return "";
-    const pts = riskHistory.map((p, i) => [xAt(i), yAt(p.score)]);
+    const pts = hist.map((p, i) => [xAt(i), yAt(p.score)]);
     let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[Math.max(0, i - 1)], p1 = pts[i],
@@ -127,6 +137,17 @@ export default function BehavioralRiskDashboard({ userId }) {
   const trendColor = RISK_COLORS[lastPoint?.level] || "#34d399";
   const fmt = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+  // Hover crosshair: map the pointer's x to the nearest point index.
+  const onChartMove = (e) => {
+    const svg = svgRef.current;
+    if (!svg || n < 2) return;
+    const r = svg.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * CW;
+    const step = (CW - PL - PR) / (n - 1);
+    setHover(Math.max(0, Math.min(n - 1, Math.round((x - PL) / step))));
+  };
+  const hoverPt = hover != null ? hist[hover] : null;
+
   return (
     <section className="panel p-risk">
       <div className="panel-head">
@@ -141,10 +162,10 @@ export default function BehavioralRiskDashboard({ userId }) {
             {[
               { label: "Active Users", value: stats.active_users ?? 0, color: "var(--cyan)" },
               { label: "Active Sessions", value: stats.active_sessions ?? 0, color: "var(--cyan)" },
-              { label: "Low Risk", value: stats.low_risk_sessions ?? 0, color: "var(--ok)" },
-              { label: "Medium Risk", value: stats.medium_risk_sessions ?? 0, color: "var(--warn)" },
-              { label: "High Risk", value: stats.high_risk_sessions ?? 0, color: "var(--bad)" },
-              { label: "Blocked", value: stats.blocked_sessions ?? 0, color: "var(--bad)" },
+              { label: "Low Risk", value: stats.low_risk_sessions ?? 0, color: "var(--green)" },
+              { label: "Medium Risk", value: stats.medium_risk_sessions ?? 0, color: "var(--yellow)" },
+              { label: "High Risk", value: stats.high_risk_sessions ?? 0, color: "var(--red)" },
+              { label: "Blocked", value: stats.blocked_sessions ?? 0, color: "var(--red)" },
             ].map((m) => (
               <div key={m.label} className="behavioral-metric">
                 <div className="behavioral-metric-val" style={{ color: m.color }}>{m.value}</div>
@@ -169,7 +190,7 @@ export default function BehavioralRiskDashboard({ userId }) {
                     <tr key={u.user_id}>
                       <td style={{ padding: "2px 4px" }}>{u.user_id || "—"}</td>
                       <td style={{ textAlign: "right", padding: "2px 4px" }}>{u.events}</td>
-                      <td style={{ textAlign: "right", padding: "2px 4px", color: u.max_risk > 70 ? "var(--bad)" : u.max_risk > 30 ? "var(--warn)" : "var(--ok)" }}>{Math.round(u.max_risk)}</td>
+                      <td style={{ textAlign: "right", padding: "2px 4px", color: u.max_risk > 70 ? "var(--red)" : u.max_risk > 30 ? "var(--yellow)" : "var(--green)" }}>{Math.round(u.max_risk)}</td>
                       <td style={{ textAlign: "right", padding: "2px 4px", color: riskColor(u.last_level) }}>{u.last_level}</td>
                     </tr>
                   ))}
@@ -188,7 +209,7 @@ export default function BehavioralRiskDashboard({ userId }) {
         </div>
         <div className="bio-info">
           <div><span className="muted">risk level</span> <span className="pill" style={{ color, borderColor: color, background: `${color}15` }}>{level}</span></div>
-          <div><span className="muted">decision</span> <span className="small" style={{ color: latest?.decision === "ALLOW" ? "var(--ok)" : "var(--bad)" }}>{latest?.decision || "—"}</span></div>
+          <div><span className="muted">decision</span> <span className="small" style={{ color: latest?.decision === "ALLOW" ? "var(--green)" : "var(--red)" }}>{latest?.decision || "—"}</span></div>
           <div><span className="muted">auth</span> <span className="small">{latest?.required_authentication || "—"}</span></div>
         </div>
       </div>
@@ -206,16 +227,41 @@ export default function BehavioralRiskDashboard({ userId }) {
       {/* §36 — Risk Score Trend: a real instrument — axes, zone bands,
           block threshold, smooth curve, tooltips, live pulse marker */}
       {n > 1 && (
-        <div className="behavioral-chart">
+        <div className={`behavioral-chart${paused ? " rc-paused" : ""}`}>
           <div className="rc-head">
             <span className="rc-title">RISK SCORE TREND</span>
-            <span className="rc-sub">
-              {n} events ·{" "}
-              <span style={{ color: "var(--red)" }}>{riskHistory.filter((p) => p.blocked).length} blocked</span>
-              {" "}· live
+            <span className="rc-ranges">
+              {[[0, "all"], [15, "15m"], [60, "1h"]].map(([v, l]) => (
+                <button key={l} type="button" className={`drill-btn${range === v ? " rc-btn-on" : ""}`} onClick={() => setRange(v)}>
+                  {l}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="drill-btn"
+                onClick={() => setPaused((p) => !p)}
+                title="freeze the chart and its live pulse (prefers-reduced-motion friendly)"
+              >
+                {paused ? "resume" : "pause"}
+              </button>
             </span>
           </div>
-          <svg viewBox={`0 0 ${CW} ${CH}`} className="rc-svg" role="img" aria-label="Risk score over time">
+          <div className="rc-sub" style={{ display: "block", marginBottom: 4 }}>
+            {n} events ·{" "}
+            <span style={{ color: "var(--red)" }}>{hist.filter((p) => p.blocked).length} blocked</span>
+            {" "}· {paused ? "paused" : "live"}
+            {range !== 0 && ranged.length > 1 ? ` · last ${range === 15 ? "15 min" : "hour"}` : ""}
+          </div>
+          <div style={{ position: "relative" }}>
+          <svg
+            viewBox={`0 0 ${CW} ${CH}`}
+            className="rc-svg"
+            role="img"
+            aria-label="Risk score over time"
+            ref={svgRef}
+            onMouseMove={onChartMove}
+            onMouseLeave={() => setHover(null)}
+          >
             <defs>
               <linearGradient id="rcArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={trendColor} stopOpacity="0.30" />
@@ -244,9 +290,10 @@ export default function BehavioralRiskDashboard({ userId }) {
             {areaPath && <path d={areaPath} fill="url(#rcArea)" />}
             {smoothPath && <path d={smoothPath} fill="none" stroke={trendColor} strokeWidth="2.2" strokeLinecap="round" className="rc-line" />}
 
-            {/* points: red = blocked, green = allowed; hover = full detail */}
-            {riskHistory.map((p, i) => (
-              <g key={i}>
+            {/* points: red = blocked, green = allowed; older points fade so the
+                newest activity reads brightest; hover = full detail */}
+            {hist.map((p, i) => (
+              <g key={i} opacity={0.35 + (0.65 * i) / Math.max(1, n - 1)}>
                 {p.blocked && <circle cx={xAt(i)} cy={yAt(p.score)} r="5.5" fill="none" stroke="#f87171" strokeWidth="1" opacity="0.45" />}
                 <circle cx={xAt(i)} cy={yAt(p.score)} r={p.blocked ? 3 : 2.2} fill={p.blocked ? "#f87171" : "#34d399"} />
                 <circle cx={xAt(i)} cy={yAt(p.score)} r="9" fill="transparent" className="rc-hit">
@@ -254,6 +301,14 @@ export default function BehavioralRiskDashboard({ userId }) {
                 </circle>
               </g>
             ))}
+
+            {/* hover crosshair + highlighted point */}
+            {hoverPt && (
+              <g className="rc-cross">
+                <line x1={xAt(hover)} x2={xAt(hover)} y1={PT} y2={CH - PB} />
+                <circle cx={xAt(hover)} cy={yAt(hoverPt.score)} r="4.5" fill="none" stroke="var(--cyan-soft)" strokeWidth="1.5" />
+              </g>
+            )}
 
             {/* live pulse on the newest point */}
             {lastPoint && (
@@ -266,9 +321,24 @@ export default function BehavioralRiskDashboard({ userId }) {
             )}
 
             {/* x labels: window start / end */}
-            <text x={PL} y={CH - 5} className="rc-x">{fmt(riskHistory[0].ts)}</text>
-            <text x={CW - PR} y={CH - 5} className="rc-x" textAnchor="end">{fmt(lastPoint?.ts || riskHistory[0].ts)}</text>
+            <text x={PL} y={CH - 5} className="rc-x">{fmt(hist[0].ts)}</text>
+            <text x={CW - PR} y={CH - 5} className="rc-x" textAnchor="end">{fmt(lastPoint?.ts || hist[0].ts)}</text>
           </svg>
+          {hoverPt && (
+            <div
+              className="rc-tip"
+              style={{
+                left: `${Math.max(10, Math.min(90, (xAt(hover) / CW) * 100))}%`,
+                top: `${(yAt(hoverPt.score) / CH) * 100}%`,
+              }}
+            >
+              <b style={{ color: hoverPt.blocked ? "var(--red)" : "var(--green)" }}>
+                {hoverPt.blocked ? "BLOCKED" : "allowed"}
+              </b>
+              {" "}risk {hoverPt.score}/100 · {hoverPt.level} · {fmt(hoverPt.ts)}
+            </div>
+          )}
+          </div>
           <div className="rc-legend">
             <span><i className="band-key" style={{ background: "rgba(255,59,48,0.5)" }} /> HIGH 70+</span>
             <span><i className="band-key" style={{ background: "rgba(255,204,0,0.5)" }} /> MEDIUM 35–70</span>

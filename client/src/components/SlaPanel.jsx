@@ -7,6 +7,7 @@
  * unreachable so it never breaks the dashboard.
  */
 import { useEffect, useState } from "react";
+import PanelSkeleton from "./PanelSkeleton";
 
 const POLL_MS = 5000;
 
@@ -46,17 +47,24 @@ export default function SlaPanel() {
   const availability = sla.availability ?? sla.uptime;
   const errorRate = sla.errorRate ?? sla.errors;
 
-  return (
+  if (!data) return (
     <section className="panel sla-panel p-sla">
       <div className="panel-head">
         <h2>SLA &amp; Observability</h2>
         <span className="muted small">live</span>
       </div>
+      <PanelSkeleton lines={3} label="loading SLA metrics" />
+      {err && <p className="small muted" style={{ marginTop: 8 }}>SLA endpoint unreachable — retrying…</p>}
+    </section>
+  );
 
-      {err && !data ? (
-        <p className="small muted">SLA endpoint unreachable — is the proxy running?</p>
-      ) : (
-        <>
+  return (
+    <section className="panel sla-panel p-sla">
+      <div className="panel-head">
+        <h2>SLA &amp; Observability</h2>
+        <span className="muted small">{err ? "reconnecting…" : "live"}</span>
+      </div>
+
           <div className="sla-grid">
             <div className="sla-cell">
               <div className="sla-num">{fmtMs(lat.p50)}</div>
@@ -98,8 +106,6 @@ export default function SlaPanel() {
               ))}
             </ul>
           )}
-        </>
-      )}
     </section>
   );
 }
