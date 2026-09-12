@@ -274,24 +274,14 @@ summary:focus-visible,
 .col-right .panel:nth-child(3) { animation-delay: 0.35s; }
 .row-full .panel { animation-delay: 0.02s; }
 
-/* Identity top edge — each panel owns its accent (see .p-* classes) */
-.panel::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 18px; right: 18px;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: linear-gradient(90deg, var(--panel-accent, var(--cyan)), transparent 85%);
-  opacity: 0.85;
-}
 /* Per-panel accents — so the dashboard reads as distinct stations, not clones */
-.p-chat    { --panel-accent: #60a5fa; }  /* LLM chat — terracotta */
-.p-risk    { --panel-accent: #38bdf8; }  /* behavioral risk — amber */
-.p-feed    { --panel-accent: #818cf8; }  /* threat feed — rose */
-.p-table   { --panel-accent: #2dd4bf; }  /* user risk table — sage */
-.p-metrics { --panel-accent: #a78bfa; }  /* metrics — sand */
-.p-sla     { --panel-accent: #e879f9; }  /* SLA — lilac */
-.p-summary { --panel-accent: #22d3ee; }  /* risk overview — apricot */
+.p-chat    { --panel-accent: #60a5fa; }  /* LLM chat — blue */
+.p-risk    { --panel-accent: #38bdf8; }  /* behavioral risk — sky */
+.p-feed    { --panel-accent: #818cf8; }  /* threat feed — indigo */
+.p-table   { --panel-accent: #2dd4bf; }  /* user risk table — teal */
+.p-metrics { --panel-accent: #a78bfa; }  /* metrics — violet */
+.p-sla     { --panel-accent: #e879f9; }  /* SLA — fuchsia */
+.p-summary { --panel-accent: #22d3ee; }  /* risk overview — cyan */
 /* Corner brackets — HUD aesthetic */
 .panel::after {
   content: "";
