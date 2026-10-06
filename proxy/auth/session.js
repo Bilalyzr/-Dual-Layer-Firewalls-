@@ -27,19 +27,24 @@ import {
 // Read lazily so import ordering vs. dotenv never leaves us with an empty secret
 // (mirrors llm/client.js). A missing secret in a non-local deploy is a hard
 // error surfaced once at first use.
+//
+// SECURITY: the fallback is RANDOM PER BOOT (crypto.randomBytes) — never a
+// constant. A constant default in a public-source repo would let anyone
+// forge valid session tokens on any deployment that forgot to set the env.
+// The random fallback keeps the demo working (tokens just don't survive a
+// restart, which no demo depends on) while remaining unforgeable.
+let _fallbackSecret = null;
 function secret() {
   const s = process.env.SESSION_SECRET;
   if (s && s.length >= 16) return s;
-  // Dev fallback: deterministic but clearly-marked insecure default so the demo
-  // works out of the box. Warn once.
-  if (!secret._warned) {
+  if (!_fallbackSecret) {
     console.warn(
-      "[auth] SESSION_SECRET unset/short — using an insecure dev default. " +
-        "Set SESSION_SECRET (>=16 chars) before any non-local deploy."
+      "[auth] SESSION_SECRET unset/short — using a RANDOM per-boot secret. " +
+        "Sessions won't survive restarts until SESSION_SECRET (>=16 chars) is set."
     );
-    secret._warned = true;
+    _fallbackSecret = crypto.randomBytes(32).toString("hex");
   }
-  return "dev-insecure-session-secret-change-me";
+  return _fallbackSecret;
 }
 
 const b64url = (buf) =>

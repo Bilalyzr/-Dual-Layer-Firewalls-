@@ -73,6 +73,12 @@ services:
         sync: false
       - key: LLM_FALLBACK_API_KEY
         sync: false
+      # Browser origins allowed to call this API (CORS). The dashboard's
+      # /api calls are same-origin via the Vercel rewrite, so this is
+      # defense-in-depth; direct cross-origin browser use is limited to
+      # the dashboard domain + local dev.
+      - key: CORS_ORIGINS
+        value: https://dual-layer-firewalls.vercel.app,http://localhost:5174
       # Keep dlf-engine from idle-sleeping: Render free sleeps services after
       # ~15 min without traffic; the engine's ~50s cold start then shows to
       # visitors as "engine offline" / n-a metrics. A /health ping every 10

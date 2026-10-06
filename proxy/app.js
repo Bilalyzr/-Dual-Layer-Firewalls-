@@ -110,7 +110,25 @@ export function createApp({ role = "all" } = {}) {
   // Trust a forwarding hop only when it's in the TRUSTED_PROXIES allow-list, so
   // Express's own req.ip agrees with our ipContext resolution (Epic A).
   app.set("trust proxy", (ip) => ipInAnyCidr(ip, trustedProxies()));
-  app.use(cors({ exposedHeaders: ["x-session-token", "x-request-id"] }));
+
+  // Security headers on every response (API + report pages): block MIME
+  // sniffing, clickjacking (framing), and referrer leakage. Zero behavioral
+  // impact on legitimate JSON/SSE/HTML consumers.
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+
+  // CORS: allow-list via CORS_ORIGINS (comma-separated). Default "*" keeps
+  // local/tooling behavior; deployments set the real browser origins.
+  const corsOrigins = (process.env.CORS_ORIGINS || "*")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  app.use(cors({
+    exposedHeaders: ["x-session-token", "x-request-id"],
+    ...(corsOrigins.length && corsOrigins[0] !== "*" ? { origin: corsOrigins } : {}),
+  }));
   app.use(express.json({ limit: "2mb" }));
   app.use(requestLogger);
   app.use(metricsMiddleware);

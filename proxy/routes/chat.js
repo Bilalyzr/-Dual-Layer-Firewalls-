@@ -146,6 +146,26 @@ function mask(text, n = 200) {
   return text.length > n ? text.slice(0, n) + "…" : text;
 }
 
+// Per-IP chat rate limit: the LLM key's quota is SHARED across all visitors,
+// so one flooding client could starve everyone. 60 req/min/IP is far above
+// any human/demo pace (the 22-prompt battery never trips it) but stops
+// floods. In-memory fixed window — resets with the process, which is fine
+// for this tier of protection.
+const _rl = new Map(); // ip -> { count, resetAt }
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = parseInt(process.env.CHAT_RATE_LIMIT_PER_MIN || "60", 10);
+function _rateLimited(ip) {
+  if (!ip) return false; // no IP resolved (tests) — don't block
+  const now = Date.now();
+  const e = _rl.get(ip);
+  if (!e || now >= e.resetAt) {
+    _rl.set(ip, { count: 1, resetAt: now + RL_WINDOW_MS });
+    return false;
+  }
+  e.count += 1;
+  return e.count > RL_MAX;
+}
+
 router.post("/", async (req, res) => {
   const t0 = performance.now();
   // Prefer the verified session identity (EPIC A) over the client-supplied
@@ -157,6 +177,16 @@ router.post("/", async (req, res) => {
   // Epic A: resolve the tamper-resistant client IP once; attached to every alert
   // this request produces so BLOCK/THREAT records carry forensic provenance.
   const forensics = forensicsFromReq(req);
+
+  if (_rateLimited(forensics?.clientIp || req.ip)) {
+    return res.status(429).json({
+      blocked: true,
+      reason: "rate_limited",
+      category: "LLM10",
+      categoryTitle: "Unbounded Consumption",
+      blockReason: `Too many prompts from this address — limit is ${RL_MAX}/minute.`,
+    });
+  }
 
   // EPIC B step-up gate: a session whose keystroke trust collapsed is frozen
   // until a fresh WebAuthn assertion clears it (see /api/auth/webauthn/*).
