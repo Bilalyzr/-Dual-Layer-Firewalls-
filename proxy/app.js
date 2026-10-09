@@ -37,9 +37,7 @@ import { llmConfig } from "./llm/client.js";
 
 import chatRouter from "./routes/chat.js";
 import biometricRouter from "./routes/biometric.js";
-import mouseRouter from "./routes/mouse.js";
 import fingerprintRouter from "./routes/fingerprint.js";
-import touchRouter from "./routes/touch.js";
 import slaRouter from "./routes/sla.js";
 import behaviorRouter from "./routes/behavior.js";
 import loginRouter from "./routes/login.js";
@@ -65,9 +63,7 @@ function mountMonolith(app) {
   app.use("/api/auth", authRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/biometric", biometricRouter);
-  app.use("/api/biometric/mouse", mouseRouter);
   app.use("/api/biometric/fingerprint", fingerprintRouter);
-  app.use("/api/biometric/touch", touchRouter);
   app.use("/api/sla", slaRouter);
   app.use("/api/behavior", behaviorRouter);
   app.use("/api/auth", loginRouter);
@@ -95,7 +91,7 @@ function mountGateway(app) {
   app.use("/api/intel", intelRouter); // threat-intel read model + STIX/TAXII export
   app.use("/api/consent", consentRouter); // consent is identity-adjacent — lives on the edge
   // Forwards compute-heavy paths to their owning services. The `/api/biometric`
-  // prefix also covers the mouse/touch/fingerprint sub-routes (Epic E/G).
+  // prefix also covers the fingerprint sub-route (Epic E/G).
   app.use("/api/chat", proxyTo(firewallSvc()));
   app.use("/api/inspect", proxyTo(firewallSvc()));
   app.use("/api/biometric", proxyTo(biometricSvc()));
@@ -150,11 +146,7 @@ export function createApp({ role = "all" } = {}) {
     app.use("/internal/agent", internalAgentRouter);
   } else if (role === "biometric") {
     app.use("/api/biometric", biometricRouter);
-    // Epic E/G behavioral sub-channels — mounted here too so distributed mode
-    // matches the monolith (the gateway forwards the whole /api/biometric prefix).
-    app.use("/api/biometric/mouse", mouseRouter);
     app.use("/api/biometric/fingerprint", fingerprintRouter);
-    app.use("/api/biometric/touch", touchRouter);
     app.use("/api/shap", shapRouter);
   }
 
