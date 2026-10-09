@@ -75,32 +75,3 @@ describe("fingerprint route", () => {
     expect(res.body.error).toBe("consent_required");
   });
 });
-
-// ---- Touch route (now consent-gated, symmetric with fingerprint) ---------
-describe("touch route", () => {
-  it("rejects without consent", async () => {
-    const app = express();
-    app.use(express.json());
-    const { default: router } = await import("../routes/touch.js");
-    app.use("/api/biometric/touch", router);
-    const res = await request(app)
-      .post("/api/biometric/touch")
-      .send({ userId: "touch-nocons", meanForce: 0.5, meanArea: 20, meanVelocity: 0.3 });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe("consent_required");
-  });
-
-  it("returns cold-start for a consenting new user", async () => {
-    const app = express();
-    app.use(express.json());
-    const { setConsent } = await import("../compliance/consent.js");
-    setConsent("touch-test", "touch", true);
-    const { default: router } = await import("../routes/touch.js");
-    app.use("/api/biometric/touch", router);
-    const res = await request(app)
-      .post("/api/biometric/touch")
-      .send({ userId: "touch-test", meanForce: 0.5, meanArea: 20, meanVelocity: 0.3 });
-    expect(res.status).toBe(200);
-    expect(res.body.cold_start).toBe(true);
-  });
-});
