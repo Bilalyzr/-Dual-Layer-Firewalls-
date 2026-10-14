@@ -1,0 +1,179 @@
+/* ThoughtLine — ported from react-bits (micro/thought-line), dependency-free.
+   Terracotta-aware: colors inherit from the Orthrus theme via currentColor. */
+.thought-line {
+  --tl-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --tl-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --tl-settle: 350ms;
+  --tl-blur: 2px;
+  --tl-shimmer: 1.8s;
+  --tl-done: 0.75;
+  --tl-timer: 0.55;
+
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--tl-color, currentColor);
+  font-family: var(--sans);
+  font-size: var(--tl-font, 16px);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.thought-line__head {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  white-space: nowrap;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+.thought-line__head[role="button"] { cursor: pointer; }
+
+.thought-line__glyph {
+  display: inline-flex;
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.2em;
+  color: var(--cyan);
+  transition: opacity var(--tl-settle) var(--tl-ease-out);
+}
+.thought-line[data-working] .thought-line__glyph {
+  animation: tl-breath 1.6s var(--tl-ease-in-out) infinite;
+}
+.thought-line:not([data-working]) .thought-line__glyph { opacity: 0.55; }
+
+@keyframes tl-breath {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.thought-line__label { display: inline-grid; }
+
+.thought-line__text {
+  grid-area: 1 / 1;
+  width: max-content;
+  opacity: 0;
+  filter: blur(var(--tl-blur));
+  transition:
+    opacity var(--tl-settle) var(--tl-ease-out),
+    filter var(--tl-settle) var(--tl-ease-out);
+}
+.thought-line__text[data-active] { opacity: 1; filter: blur(0); }
+.thought-line__text--done[data-active] { opacity: var(--tl-done); }
+
+.thought-line__breath { display: inline-block; }
+
+.thought-line[data-working] .thought-line__breath[data-shimmer] {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, currentColor 50%, transparent) 30%,
+    currentColor 50%,
+    color-mix(in srgb, currentColor 50%, transparent) 70%
+  );
+  background-size: 250% 100%;
+  background-position: 125% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: thought-line-shimmer var(--tl-shimmer) linear infinite;
+}
+@keyframes thought-line-shimmer {
+  to { background-position: -125% 0; }
+}
+
+.thought-line__timer {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  opacity: var(--tl-timer);
+  transition:
+    opacity var(--tl-settle) ease,
+    transform var(--tl-settle) var(--tl-ease-in-out);
+}
+.thought-line__timer[data-done] { opacity: var(--tl-done); }
+
+.thought-line__chevron {
+  display: inline-flex;
+  margin-left: 0.1em;
+  opacity: 0;
+  transition:
+    opacity 200ms ease,
+    transform 200ms var(--tl-ease-out);
+}
+.thought-line__chevron[data-on] { opacity: 0.55; }
+.thought-line[data-open] .thought-line__chevron { transform: rotate(180deg); }
+
+.thought-line__trace {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 0;
+  min-width: 100%;
+  transition: grid-template-rows var(--tl-settle) var(--tl-ease-out);
+}
+.thought-line__trace[data-open] { grid-template-rows: 1fr; }
+
+.thought-line__fold { min-height: 0; overflow-y: clip; }
+
+.thought-line__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+  width: max-content;
+  padding: 0.6em 0 0.2em 1.6em;
+  font-size: 0.875em;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.thought-line__step {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  opacity: 1;
+  transition:
+    opacity 200ms var(--tl-ease-out);
+}
+
+.thought-line__mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1em;
+  height: 1em;
+  opacity: 0.55;
+  color: var(--cyan);
+}
+.thought-line__step[data-done] .thought-line__mark { color: var(--green); opacity: 0.8; }
+
+.thought-line__pulse {
+  display: block;
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: thought-line-pulse 1.6s var(--tl-ease-in-out) infinite;
+}
+.thought-line__pulse[data-idle] { animation: none; opacity: 0.35; }
+
+@keyframes thought-line-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.thought-line__step-text { transition: opacity var(--tl-settle) ease; }
+.thought-line__step[data-done] .thought-line__step-text { opacity: 0.55; }
+
+@media (prefers-reduced-motion: reduce) {
+  .thought-line__text { filter: none !important; transition: opacity var(--tl-settle) ease; }
+  .thought-line__timer { transition: opacity var(--tl-settle) ease; }
+  .thought-line__glyph { animation: none !important; }
+  .thought-line[data-working] .thought-line__breath[data-shimmer] {
+    animation: none;
+    background: none;
+    color: inherit;
+    -webkit-text-fill-color: inherit;
+  }
+  .thought-line__pulse { animation-duration: 2.4s; }
+}
