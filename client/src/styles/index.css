@@ -279,8 +279,6 @@ summary:focus-visible,
 .p-risk    { --panel-accent: #38bdf8; }  /* behavioral risk — sky */
 .p-feed    { --panel-accent: #818cf8; }  /* threat feed — indigo */
 .p-table   { --panel-accent: #2dd4bf; }  /* user risk table — teal */
-.p-metrics { --panel-accent: #a78bfa; }  /* metrics — violet */
-.p-sla     { --panel-accent: #e879f9; }  /* SLA — fuchsia */
 .p-summary { --panel-accent: #22d3ee; }  /* risk overview — cyan */
 /* Corner brackets — HUD aesthetic */
 .panel::after {
