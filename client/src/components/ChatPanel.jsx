@@ -8,6 +8,18 @@ import { apiFetch } from "../lib/api";
 import StepUpModal from "./StepUpModal";
 import { IconAlert, IconShieldCheck, MSG_ICONS } from "./Icons";
 
+const LLM_LABELS = {
+  "local-fallback": "Local Qwen",
+  "hosted-fallback": "Hosted fallback",
+  offline: "Offline",
+};
+// Primary answers show a clean "AI" tag — the provider/model identity is
+// internal routing detail, not something to surface to visitors.
+const llmBadgeLabel = (llm, simulated) => {
+  if (simulated && !llm?.via) return "offline";
+  if (!llm?.via || llm.via === "primary") return "AI";
+  return LLM_LABELS[llm.via] || llm.via;
+};
 
 /**
  * Render prompt text with the firewall's word-level verdicts highlighted
@@ -237,16 +249,14 @@ export default function ChatPanel({ userId }) {
             <div className="msg-content">
             <div className="msg-role">
               {m.role}
-              {m.role === "assistant" && m.llm && m.llm.latencyMs != null && (
-                <ThoughtLine
-                  className="msg-thoughtline"
-                  label="Thinking…"
-                  steps={PIPELINE}
-                  working={false}
-                  elapsed={m.llm.latencyMs / 1000}
-                  fontSize={11}
-                  showTimer
-                />
+              {m.role === "assistant" && m.llm && (
+                <span
+                  className="llm-badge"
+                  title={`answered${m.llm.latencyMs != null ? ` in ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}`}
+                >
+                  {llmBadgeLabel(m.llm, m.simulated)}
+                  {m.llm.latencyMs != null ? ` · ${(m.llm.latencyMs / 1000).toFixed(1)}s` : ""}
+                </span>
               )}
             </div>
             <div className="msg-text">
@@ -290,16 +300,30 @@ export default function ChatPanel({ userId }) {
         })}
         {busy && (
           <div className="msg msg-assistant">
-            <div className="msg-role">assistant</div>
-            <ThoughtLine
-              label="Thinking…"
-              steps={PIPELINE}
-              activeIndex={Math.min(stage, PIPELINE.length - 1)}
-              fontSize={13}
-            />
+            <div className="msg-avatar msg-avatar-busy" aria-hidden="true"><IconShieldCheck size={13} /></div>
+            <div className="msg-content">
+              <div className="msg-role">assistant</div>
+              <div className="reply-loader" role="status" aria-label="inspecting prompt through firewall layers">
+                <div className="rl-head">
+                  <span className="rl-orb" aria-hidden="true" />
+                  <span className="shimmer-text">{stage < PIPELINE.length - 1
+                    ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
+                    : "answering"}</span>
+                  <span className="pl-dots"><i /><i /><i /></span>
+                </div>
+                <div className="rl-skel" aria-hidden="true">
+                  <i style={{ width: "92%" }} />
+                  <i style={{ width: "76%" }} />
+                  <i style={{ width: "54%" }} />
+                </div>
+              </div>
+            </div>
           </div>
         )}
-      <textarea
+      </div>
+
+      <div className="chat-composer">
+        <textarea
           className="composer-text"
           placeholder="Type a prompt — Enter to send, Shift+Enter for newline"
           value={input}

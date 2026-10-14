@@ -146,9 +146,3 @@ export const MSG_ICONS = {
   globe: IconGlobe,
   shield: IconShield,
 };
-
-export const IconChevronDown = (p) => (
-  <Svg {...p} strokeWidth="2.2">
-    <path d="m6 9 6 6 6-6" />
-  </Svg>
-);
