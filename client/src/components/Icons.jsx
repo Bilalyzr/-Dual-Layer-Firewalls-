@@ -147,13 +147,6 @@ export const MSG_ICONS = {
   shield: IconShield,
 };
 
-/** Claude-style starburst — the pulsing loading mark (ThoughtLine glyph). */
-export const IconStarburst = (p) => (
-  <Svg {...p} strokeWidth="1.8">
-    <path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.6 5.6l3.5 3.5M14.9 14.9l3.5 3.5M18.4 5.6l-3.5 3.5M9.1 14.9l-3.5 3.5" />
-  </Svg>
-);
-
 export const IconChevronDown = (p) => (
   <Svg {...p} strokeWidth="2.2">
     <path d="m6 9 6 6 6-6" />
