@@ -23,9 +23,6 @@ COPY models ./models
 # train at build.
 RUN if [ ! -f engine/models/tfidf.joblib ] && [ ! -f models/tfidf.joblib ]; then \
       python -m engine.classifier.train; \
-    fi && \
-    if [ ! -f engine/models/biometric_ensemble.joblib ]; then \
-      python -m engine.biometric.train_biometric; \
     fi
 
 EXPOSE 8011

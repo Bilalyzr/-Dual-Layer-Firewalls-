@@ -8,10 +8,9 @@
 #   gateway       public edge — sessions/auth, SSE, alerts; forwards the rest
 #   firewall-svc  Layer-1 pipeline (/api/chat, /api/inspect) — scale this out
 #   agent-svc     Trifecta Reader→Validator→Actor (internal only)
-#   biometric-svc Layer-2 keystroke scoring + SHAP + step-up enforcement
 #   reader-svc    sandboxed untrusted-content reader (EPIC E, hardened)
 #   redis         event bus (SSE fan-out across replicas)
-#   engine        Python classifier + biometric scoring (unchanged)
+#   engine        Python classifier scoring (unchanged)
 #   mongo         shared persistence (unchanged)
 #   client        React dashboard (talks to the gateway)
 #
@@ -107,7 +106,6 @@ services:
       SERVICE_ROLE: gateway
       SERVICE_NAME: gateway
       FIREWALL_SVC_URL: http://firewall-svc:4000
-      BIOMETRIC_SVC_URL: http://biometric-svc:4000
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Orthrus AI Firewall}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:8080}
@@ -115,8 +113,6 @@ services:
       redis:
         condition: service_healthy
       firewall-svc:
-        condition: service_started
-      biometric-svc:
         condition: service_started
     # Reachable by the client's nginx (which upstreams to `proxy`) via this alias.
     networks:
@@ -151,16 +147,6 @@ services:
       SERVICE_ROLE: agent
       SERVICE_NAME: agent-svc
       READER_SVC_URL: http://reader-svc:8012
-    expose:
-      - "4000"
-
-  biometric-svc:
-    <<: *proxy-build
-    command: ["node", "services/biometric-svc.js"]
-    environment:
-      <<: *proxy-env
-      SERVICE_ROLE: biometric
-      SERVICE_NAME: biometric-svc
     expose:
       - "4000"
 

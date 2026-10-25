@@ -41,10 +41,9 @@ jobs:
         run: pip install -r engine/requirements.txt
       # Model artifacts (.joblib/.pt) are gitignored — train them in CI so the
       # test suite is self-contained.
-      - name: Train classifier + biometric models
+      - name: Train classifier models
         run: |
           python -m engine.classifier.train
-          python -m engine.biometric.train_biometric
       - name: Run engine tests (pytest)
         run: python -m pytest engine/tests/ -q
 
@@ -69,7 +68,7 @@ jobs:
           set -e
           # role -> port. Each role must expose a uniform /healthz + /metrics
           # surface (mountTelemetry) and own the correct role label.
-          declare -A SVC=( [firewall]=4090 [agent]=4091 [biometric]=4092 )
+          declare -A SVC=( [firewall]=4090 [agent]=4091 )
           for role in "${!SVC[@]}"; do
             port=${SVC[$role]}
             PROXY_PORT=$port node services/${role}-svc.js &

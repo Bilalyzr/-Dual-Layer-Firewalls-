@@ -28,7 +28,7 @@ import {
   createSession,
   shouldStepUp,
   sessionMiddleware,
-  markStepUpRequired,
+  requireStepUp,
 } from "../auth/session.js";
 import sessionRouter from "../routes/session.js";
 import chatRouter from "../routes/chat.js";
@@ -105,7 +105,7 @@ describe("step-up → chat gate", () => {
     const { body } = await request(app).post("/api/session").send({ userId: "u-collapse" });
     const auth = { Authorization: `Bearer ${body.token}` };
 
-    await markStepUpRequired(body.sessionId, "anomalous session risk");
+    await requireStepUp(body.sessionId, "anomalous session risk");
 
     // Chat must now be frozen until a WebAuthn assertion clears step-up.
     const chat = await request(app).post("/api/chat").set(auth).send({ prompt: "hello" });
