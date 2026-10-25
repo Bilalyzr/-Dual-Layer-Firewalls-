@@ -7,12 +7,12 @@
  */
 
 const ENGINE_URL =
-  process.env.ENGINE_URL || "http://localhost:8011";
+  process.env.ENGINE_URL || "http://127.0.0.1:8011";
 
 /** Classify a prompt. Returns { threatProbability, latencyMs, ready }. */
 export async function classifyPrompt(text) {
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 2000);
+  const timeout = setTimeout(() => ctrl.abort(), 4000);
   try {
     const res = await fetch(`${ENGINE_URL}/classify`, {
       method: "POST",
@@ -34,41 +34,10 @@ export async function classifyPrompt(text) {
 }
 }
 
-/**
- * Score a keystroke batch against the user's baseline.
- * @param {object} p
- * @returns {Promise<object>} { trust_score, risk_score, z, cold_start, reason, ... }
- */
-export async function scoreBiometricBatch(p) {
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 2000);
-  try {
-    const res = await fetch(`${ENGINE_URL}/score-batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(p),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error(`engine ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    return {
-      trust_score: 100,
-      risk_score: 0,
-      z: 0,
-      cold_start: true,
-      reason: `engine unavailable: ${String(err.message || err)}`,
-      degraded: true,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 /** Liveness probe for /metrics. */
 export async function engineHealth() {
   try {
-    const res = await fetch(`${ENGINE_URL}/health`, { signal: AbortSignal.timeout(1000) });
+    const res = await fetch(`${ENGINE_URL}/health`, { signal: AbortSignal.timeout(2500) });
     return res.ok;
   } catch {
     return false;

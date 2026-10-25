@@ -11,12 +11,21 @@
  * If MEDIUM → step-up MFA required.
  * If LOW → normal login + session issued.
  */
+import crypto from "crypto";
 import { Router } from "express";
 import { publish } from "../middleware/eventBus.js";
 import { appendAudit } from "../compliance/auditChain.js";
+import { createSession } from "../auth/session.js";
 
 const router = Router();
-const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
+const ENGINE_URL = process.env.ENGINE_URL || "http://127.0.0.1:8011";
+
+function safePasswordMatch(expected, provided) {
+  if (typeof expected !== "string" || typeof provided !== "string") return false;
+  const a = crypto.createHash("sha256").update(expected, "utf8").digest();
+  const b = crypto.createHash("sha256").update(provided, "utf8").digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 // Mock user store (demo). In production this would be a real IAM / DB lookup.
 const USERS = {
@@ -32,9 +41,9 @@ router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const clientIp = req.ipContext?.clientIp || req.ip || "127.0.0.1";
 
-  // 1. Credential validation
+  // 1. Credential validation (constant-time digest comparison)
   const user = USERS[username?.toLowerCase()];
-  const passwordValid = user && user.password === password;
+  const passwordValid = Boolean(user && safePasswordMatch(user.password, password));
 
   if (!passwordValid) {
     appendAudit("login_failed", { username, ip: clientIp, ts: new Date() });
@@ -125,14 +134,16 @@ router.post("/login", async (req, res) => {
     // Fall through to issue session — the behavioral panel will show the risk
   }
 
-  // 5. LOW risk → issue session
-  const token = `sess-${username}-${Date.now().toString(36)}`;
-  _sessions.set(token, { username, role: user.role, loginTime: now, behavioral });
+  // 5. LOW/MEDIUM risk → issue cryptographically signed session token
+  const signedSession = await createSession({ userId: username });
+  const token = signedSession.token;
+  _sessions.set(token, { username, role: user.role, loginTime: now, behavioral, sessionId: signedSession.sessionId });
   appendAudit("login_success", { username, ip: clientIp, risk: behavioral.risk_score, ts: new Date() });
 
   res.json({
     success: true,
     token,
+    sessionId: signedSession.sessionId,
     user: { username, role: user.role, privilege_level: user.privilege_level },
     behavioral,
   });
@@ -145,12 +156,12 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/users", (_req, res) => {
-  // Demo helper — lists available test accounts (NOT for production)
+  // Demo helper — lists available test accounts (passwords redacted)
   res.json({
     accounts: Object.entries(USERS).map(([u, d]) => ({
       username: u,
       role: d.role,
-      password_hint: d.password.slice(0, 2) + "***",
+      password_hint: "***",
     })),
   });
 });

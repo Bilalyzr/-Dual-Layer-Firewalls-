@@ -13,8 +13,16 @@ import { appendAudit } from "../compliance/auditChain.js";
 const router = Router();
 const _fingerprints = new Map(); // userId -> { combined, prev, ts }
 
+const isAnonSessionUser = (u) => !u || u === "anon" || /^user-[0-9a-f]{8}$/i.test(u);
+
 router.post("/", async (req, res) => {
-  const userId = req.body?.userId || "anon";
+  if (!isAnonSessionUser(req.session?.userId) && req.body?.userId && req.session.userId !== req.body.userId) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "Cannot modify another user's device fingerprint.",
+    });
+  }
+  const userId = req.body?.userId || req.session?.userId || "anon";
   // Server-side consent gate (defense in depth — the client checks too).
   if (process.env.CONSENT_ENFORCEMENT !== "off" && !hasConsent(userId, "fingerprint")) {
     return res.status(403).json({ error: "consent_required", category: "fingerprint" });
@@ -45,6 +53,12 @@ router.post("/", async (req, res) => {
 });
 
 router.get("/:userId", (req, res) => {
+  if (!isAnonSessionUser(req.session?.userId) && req.params.userId && req.session.userId !== req.params.userId) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "Cannot read another user's device fingerprint.",
+    });
+  }
   const fp = _fingerprints.get(req.params.userId);
   res.json(fp || { stored: false });
 });

@@ -16,7 +16,7 @@
 import { MongoClient } from "mongodb";
 import crypto from "node:crypto";
 
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI_LOCAL || "mongodb://localhost:27017/firewall";
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI_LOCAL || "mongodb://127.0.0.1:27017/firewall";
 
 // EPIC D: at-rest field encryption (transparent when APP_ENCRYPTION_KEY unset).
 import {
@@ -36,6 +36,7 @@ let attemptedOnce = false;
 // In-memory fallbacks (used if Mongo is down — demo-safe).
 const mem = {
   alerts: [],
+  module_analyses: [],
   samples: [],
   baselines: new Map(),
   behavior_baselines: new Map(), // `${channel}:${userId}` -> mouse/touch baseline (Epic G)
@@ -55,7 +56,11 @@ export async function connect() {
     client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: selectionTimeout });
     await client.connect();
     db = client.db();
-    await Promise.all([
+    connected = true;
+    console.log("[db] connected to MongoDB");
+    // Build indexes in the background so server startup (app.listen) is never
+    // blocked by slow disk/index locks.
+    Promise.all([
       db.collection("alerts").createIndex({ ts: -1 }),
       db.collection("alerts").createIndex({ alertId: 1 }, { sparse: true }),
       db.collection("samples").createIndex({ ts: -1 }),
@@ -65,9 +70,7 @@ export async function connect() {
       db.collection("sessions").createIndex({ sessionId: 1 }, { unique: true }),
       db.collection("credentials").createIndex({ credentialID: 1 }, { unique: true }),
       db.collection("credentials").createIndex({ userId: 1 }),
-    ]);
-    connected = true;
-    console.log("[db] connected to MongoDB");
+    ]).catch((e) => console.warn(`[db] index init warning: ${e.message}`));
   } catch (err) {
     connected = false;
     console.warn(`[db] mongo unavailable, using in-memory fallback: ${err.message}`);
@@ -106,6 +109,47 @@ export async function recentAlerts(limit = 50) {
     ? await db.collection("alerts").find().sort({ ts: -1 }).limit(limit).toArray()
     : mem.alerts.slice(0, limit);
   return rows.map((r) => decryptFields(r, SENSITIVE_ALERT_FIELDS));
+}
+
+// ---- Module score analyses (6-module per-prompt breakdown) ---------------- //
+export async function insertModuleAnalysis(doc) {
+  if (!doc) return null;
+  const full = { ...doc, ts: doc.ts || new Date().toISOString() };
+  if (connected) {
+    await db
+      .collection("module_analyses")
+      .updateOne(
+        { ts: full.ts, prompt: full.prompt, userId: full.userId },
+        { $set: full },
+        { upsert: true }
+      )
+      .catch(() => {});
+  }
+  const existingIdx = mem.module_analyses.findIndex(
+    (m) => m.ts === full.ts && m.prompt === full.prompt
+  );
+  if (existingIdx >= 0) {
+    mem.module_analyses[existingIdx] = full;
+  } else {
+    mem.module_analyses.unshift(full);
+    mem.module_analyses = mem.module_analyses.slice(0, 200);
+  }
+  return full;
+}
+
+export async function recentModuleAnalyses(limit = 30) {
+  if (connected) {
+    try {
+      const rows = await db
+        .collection("module_analyses")
+        .find({}, { projection: { _id: 0 } })
+        .sort({ ts: -1 })
+        .limit(limit)
+        .toArray();
+      if (rows.length > 0) return rows;
+    } catch {}
+  }
+  return mem.module_analyses.slice(0, limit);
 }
 
 /**

@@ -7,6 +7,12 @@ import { subscribe, subscriberCount } from "../middleware/eventBus.js";
 const router = Router();
 
 router.get("/", (req, res) => {
+  // Prevent legacy/multiple tabs from exhausting the browser's 6-connection
+  // HTTP/1.1 pool. Returning 204 No Content tells EventSource to stop
+  // reconnecting permanently per the WHATWG SSE specification.
+  if ((!req.query?.v && subscriberCount() >= 1) || subscriberCount() >= 3) {
+    return res.status(204).end();
+  }
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",

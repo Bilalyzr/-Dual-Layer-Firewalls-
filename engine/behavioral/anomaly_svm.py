@@ -8,6 +8,7 @@ Output: anomaly_score (0..1, where 1 = far outside normal boundary).
 """
 from __future__ import annotations
 import os
+import threading
 from pathlib import Path
 
 import joblib
@@ -20,6 +21,7 @@ SCALER_PATH = MODEL_DIR / "behavioral_scaler.joblib"
 
 _svm = None
 _scaler = None
+_lock = threading.Lock()
 
 
 def model_ready() -> bool:
@@ -28,13 +30,17 @@ def model_ready() -> bool:
 
 def _load():
     global _svm, _scaler
-    if _svm is None:
-        if not model_ready():
-            raise FileNotFoundError(
-                f"behavioral SVM not found at {SVM_PATH}. Run: python -m engine.behavioral.train_behavioral"
-            )
-        _svm = joblib.load(SVM_PATH)
-        _scaler = joblib.load(SCALER_PATH)
+    if _svm is None or _scaler is None:
+        with _lock:
+            if _svm is None or _scaler is None:
+                if not model_ready():
+                    raise FileNotFoundError(
+                        f"behavioral SVM not found at {SVM_PATH}. Run: python -m engine.behavioral.train_behavioral"
+                    )
+                svm = joblib.load(SVM_PATH)
+                scaler = joblib.load(SCALER_PATH)
+                _scaler = scaler
+                _svm = svm
     return _svm, _scaler
 
 

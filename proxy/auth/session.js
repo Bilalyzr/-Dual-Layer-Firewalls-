@@ -75,16 +75,27 @@ export function verifyToken(token) {
   return crypto.timingSafeEqual(a, b) ? sessionId : null;
 }
 
+// Per-user step-up lock registry: prevents a frozen user (stepUpRequired: true)
+// from bypassing FIDO2/WebAuthn step-up MFA by calling POST /api/session to
+// mint a fresh session token for the same userId.
+const _userStepUp = new Map();
+
 /**
  * Create a fresh session and persist it. Returns the token + the stored record.
+ * If the userId already has an unresolved step-up lock, the new session inherits
+ * stepUpRequired: true until a verified WebAuthn assertion clears it.
  * @param {{ userId?: string }} [opts]
  */
 export async function createSession({ userId } = {}) {
   const sessionId = crypto.randomBytes(16).toString("hex");
+  const resolvedUserId = userId || `user-${sessionId.slice(0, 8)}`;
+  const lockedState = _userStepUp.get(resolvedUserId);
   const doc = {
     sessionId,
-    userId: userId || `user-${sessionId.slice(0, 8)}`,
-    trustState: { stepUpRequired: false, lastVerifiedAt: null, reason: null },
+    userId: resolvedUserId,
+    trustState: lockedState
+      ? { ...lockedState }
+      : { stepUpRequired: false, lastVerifiedAt: null, reason: null },
     createdAt: new Date(),
   };
   await createSessionDoc(doc);
@@ -100,13 +111,24 @@ export async function getSessionFromToken(token) {
 
 /** Mark a session as requiring step-up re-auth (EPIC B enforcement hook). */
 export async function requireStepUp(sessionId, reason) {
-  return await updateSessionDoc(sessionId, {
-    trustState: { stepUpRequired: true, lastVerifiedAt: null, reason: reason || "trust_collapse" },
-  });
+  const trustState = {
+    stepUpRequired: true,
+    lastVerifiedAt: null,
+    reason: reason || "trust_collapse",
+  };
+  const existing = await getSessionDoc(sessionId);
+  if (existing?.userId) {
+    _userStepUp.set(existing.userId, trustState);
+  }
+  return await updateSessionDoc(sessionId, { trustState });
 }
 
 /** Clear step-up after a successful WebAuthn assertion. */
 export async function clearStepUp(sessionId) {
+  const existing = await getSessionDoc(sessionId);
+  if (existing?.userId) {
+    _userStepUp.delete(existing.userId);
+  }
   return await updateSessionDoc(sessionId, {
     trustState: { stepUpRequired: false, lastVerifiedAt: new Date(), reason: null },
   });

@@ -67,6 +67,33 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
 
     prompt = req.effective_prompt()
 
+    if SETTINGS.max_prompt_chars > 0 and len(prompt) > SETTINGS.max_prompt_chars:
+        layers["sanitizer"] = _layer_meta(
+            removed=["prompt_too_large"],
+            length=len(prompt),
+            limit=SETTINGS.max_prompt_chars,
+        )
+        outcome = PipelineOutcome(
+            blocked=True,
+            status_code=413,
+            body={
+                **BlockedResponse(
+                    error="prompt too large",
+                    reason=f"prompt too large ({len(prompt)} chars > {SETTINGS.max_prompt_chars} limit)",
+                    risk_score=1.0,
+                    layers=layers,
+                    request_id=request_id,
+                    latency_ms=round(1000 * (time.perf_counter() - t_start), 2),
+                ).model_dump(),
+                "limit": SETTINGS.max_prompt_chars,
+                "length": len(prompt),
+            },
+        )
+        return _finish(
+            request_id, user_id, req, outcome, layers, client_ip,
+            t_start, decision_label="block", block_layer="length_guard", risk=1.0,
+        )
+
     # ---- L1: Prompt Sanitization ----------------------------------------- #
     t0 = time.perf_counter()
     sanitized = sanitizer.sanitize(prompt)
@@ -135,7 +162,7 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
     layers["memory"] = _layer_meta(
         similarity=round(memory_similarity, 4),
         matched=memory_similarity >= SETTINGS.memory_block_threshold,
-        known_attack=(memory_payload.get("text") or "")[:80],
+        known_attack=(memory_payload.get("text") or "")[:80] if memory_similarity >= 0.65 else "",
     )
 
     # ---- L3: Behavioral Session Layer (stateful) -------------------------- #
@@ -272,6 +299,180 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
                    t_start, decision_label="filtered" if not out.safe else "allow",
                    risk=dec.risk_score,
                    training_text=sanitized.sanitized_prompt)
+
+
+def inspect_prompt_modules(req: ChatCompletionRequest) -> dict[str, Any]:
+    """Evaluate all 6 security analysis modules (L1-L5) without calling the LLM.
+
+    Always computes the deep embedding vector so AI Threat Detection,
+    Semantic Attack Memory, Behavioral Analysis, and RAG Security all report
+    complete numerical scores for the frontend transparency breakdown.
+    """
+    t_start = time.perf_counter()
+    user_id = req.user_id or "anon"
+    prompt = req.effective_prompt()
+
+    if SETTINGS.max_prompt_chars > 0 and len(prompt) > SETTINGS.max_prompt_chars:
+        lat = round(1000 * (time.perf_counter() - t_start), 2)
+        reason = f"prompt too large ({len(prompt)} chars > {SETTINGS.max_prompt_chars} limit)"
+        return {
+            "blocked": True,
+            "error": "prompt too large",
+            "limit": SETTINGS.max_prompt_chars,
+            "length": len(prompt),
+            "risk_score": 1.0,
+            "block_layer": "length_guard",
+            "reason": reason,
+            "latency_ms": lat,
+            "modules": {
+                "prompt_sanitization": {"score": 100.0, "raw_score": 1.0, "status": "REJECTED", "removed": ["prompt_too_large"], "word_weightage": 0.0, "negative_terms": [], "positive_terms": [], "latency_ms": lat},
+                "ai_threat_detection": {"score": 0.0, "raw_score": 0.0, "status": "SKIPPED", "intent_score": 0.0, "tfidf_score": None, "cascade_tier": "fast-reject", "model": "length_guard", "threshold": input_filter.block_threshold(), "latency_ms": 0.0},
+                "semantic_attack_memory": {"score": 0.0, "raw_score": 0.0, "status": "CLEAR", "similarity": 0.0, "threshold": SETTINGS.memory_block_threshold, "matched": False, "known_attack": "", "latency_ms": 0.0},
+                "behavioral_analysis": {"score": 75.0, "raw_score": 0.75, "status": "HIGH", "cumulative_risk": 0.75, "drift": 0.0, "attack_proximity": 1.0, "turn_count": 1, "sentiment_avg": 0.0, "backend": redis_backend(), "latency_ms": 0.0},
+                "rag_security": {"score": 0.0, "raw_score": 0.0, "status": "SAFE", "risk": 0.0, "safe_docs": 0, "dropped_docs": [], "imperative_flags": [], "latency_ms": 0.0},
+                "final_decision_engine": {"score": 100.0, "raw_score": 1.0, "status": "BLOCK", "verdict": "BLOCK", "triggered_by": "length_guard", "reason": reason, "latency_ms": lat},
+            },
+        }
+
+    # 1. Prompt Sanitization + Sentiment Lexicon
+    t0 = time.perf_counter()
+    sanitized = sanitizer.sanitize(prompt)
+    from services.policy_engine import word_sentiment
+
+    # Score word_sentiment on the RAW prompt so negative terms stripped by
+    # sanitizer (e.g. "ignore previous instructions") still show their true
+    # lexicon weightage in the UI.
+    sentiment = word_sentiment(prompt)
+    sanitize_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    # 2. AI Threat Detection (Cascade TF-IDF + Deep MiniLM + XGBoost)
+    t0 = time.perf_counter()
+    sanitizer_clean = not sanitized.removed
+    screen = (cascade_mod.fast_classify(
+        sanitized.sanitized_prompt,
+        weightage=sentiment["weightage"],
+        sanitizer_clean=sanitizer_clean,
+    ) if SETTINGS.cascade_enabled
+    else {"tier": "deep", "tfidf_score": None, "reason": "cascade disabled",
+          "latency_ms": 0.0})
+    intent = input_filter.classify(sanitized.sanitized_prompt)
+    intent_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    # 3. Semantic Attack Memory (Qdrant cosine similarity)
+    t0 = time.perf_counter()
+    memory_similarity, memory_payload = 0.0, {}
+    if intent.embedding_vector:
+        from services import qdrant_client as _qmem
+
+        memory_similarity, memory_payload = _qmem.recall_similar(
+            intent.embedding_vector)
+    memory_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    # 4. Behavioral Analysis (Session EWMA risk, drift, attack proximity)
+    t0 = time.perf_counter()
+    session = behavioral.track(
+        user_id, intent.embedding_vector, intent.intent_score,
+        injection_weightage=sentiment["weightage"],
+    )
+    behavior_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    # 5. RAG Security (Context-intent consistency, imperatives, credential leaks)
+    t0 = time.perf_counter()
+    rag = rag_validator.validate(intent.embedding_vector, sanitized.sanitized_prompt)
+    rag_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    # 6. Final Multi-Signal Decision Engine
+    t0 = time.perf_counter()
+    dec = decision_mod.evaluate(sanitized, intent, session, rag,
+                                injection_weightage=sentiment["weightage"],
+                                memory_similarity=memory_similarity)
+    decision_ms = round(1000 * (time.perf_counter() - t0), 2)
+
+    if dec.blocked:
+        try:
+            from services import qdrant_client as _qmem
+
+            _qmem.remember_blocked(sanitized.sanitized_prompt,
+                                   intent.embedding_vector,
+                                   user_id=user_id, risk=dec.risk_score,
+                                   layer=dec.layer)
+        except Exception:
+            pass
+
+    sanitize_score = min(1.0, round(
+        max(sentiment["weightage"], 0.85 if sanitized.removed else 0.0), 4))
+
+    return {
+        "blocked": dec.blocked,
+        "risk_score": dec.risk_score,
+        "block_layer": dec.layer or ("none" if not dec.blocked else "policy"),
+        "reason": dec.reason,
+        "latency_ms": round(1000 * (time.perf_counter() - t_start), 2),
+        "modules": {
+            "prompt_sanitization": {
+                "score": round(sanitize_score * 100, 1),
+                "raw_score": sanitize_score,
+                "status": "SCRUBBED" if sanitized.removed else ("FLAGGED" if sentiment["weightage"] >= 0.5 else "CLEAN"),
+                "removed": sanitized.removed,
+                "word_weightage": round(sentiment["weightage"], 4),
+                "negative_terms": sentiment["negative_terms"],
+                "positive_terms": sentiment["positive_terms"],
+                "latency_ms": sanitize_ms,
+            },
+            "ai_threat_detection": {
+                "score": round(intent.intent_score * 100, 1),
+                "raw_score": round(intent.intent_score, 4),
+                "status": "THREAT" if intent.intent_score >= input_filter.block_threshold() else ("ELEVATED" if intent.intent_score >= 0.4 else "SAFE"),
+                "intent_score": round(intent.intent_score, 4),
+                "tfidf_score": round(screen["tfidf_score"], 4) if screen.get("tfidf_score") is not None else None,
+                "cascade_tier": screen.get("tier", "deep"),
+                "model": intent.model_used,
+                "threshold": input_filter.block_threshold(),
+                "latency_ms": intent_ms,
+            },
+            "semantic_attack_memory": {
+                "score": round(memory_similarity * 100, 1),
+                "raw_score": round(memory_similarity, 4),
+                "status": "MATCHED" if memory_similarity >= SETTINGS.memory_block_threshold else ("NEAR" if memory_similarity >= 0.70 else "CLEAR"),
+                "similarity": round(memory_similarity, 4),
+                "threshold": SETTINGS.memory_block_threshold,
+                "matched": memory_similarity >= SETTINGS.memory_block_threshold,
+                "known_attack": (memory_payload.get("text") or "")[:80] if memory_similarity >= 0.65 else "",
+                "latency_ms": memory_ms,
+            },
+            "behavioral_analysis": {
+                "score": round(session.cumulative_risk * 100, 1),
+                "raw_score": round(session.cumulative_risk, 4),
+                "status": "BLOCKED" if session.blocked else ("HIGH" if session.cumulative_risk >= 0.7 else ("MEDIUM" if session.cumulative_risk >= 0.35 else "LOW")),
+                "cumulative_risk": round(session.cumulative_risk, 4),
+                "drift": round(session.drift, 4),
+                "attack_proximity": round(session.attack_proximity, 4),
+                "turn_count": session.turn_count,
+                "sentiment_avg": round(session.sentiment_avg, 4),
+                "backend": redis_backend(),
+                "latency_ms": behavior_ms,
+            },
+            "rag_security": {
+                "score": round(rag.risk * 100, 1),
+                "raw_score": round(rag.risk, 4),
+                "status": "POISONED" if rag.risk >= 0.7 else ("FILTERED" if rag.dropped_docs else "SAFE"),
+                "risk": round(rag.risk, 4),
+                "safe_docs": len(rag.safe_rag_docs),
+                "dropped_docs": rag.dropped_docs,
+                "imperative_flags": rag.imperative_flags,
+                "latency_ms": rag_ms,
+            },
+            "final_decision_engine": {
+                "score": round(dec.risk_score * 100, 1),
+                "raw_score": round(dec.risk_score, 4),
+                "status": "BLOCK" if dec.blocked else ("RESTRICT" if dec.risk_score >= 0.5 else "ALLOW"),
+                "verdict": "BLOCK" if dec.blocked else "ALLOW",
+                "triggered_by": dec.layer or "none",
+                "reason": dec.reason or "all security modules passed",
+                "latency_ms": decision_ms,
+            },
+        },
+    }
 
 
 # --------------------------------------------------------------------------- #

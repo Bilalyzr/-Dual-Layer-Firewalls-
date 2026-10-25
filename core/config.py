@@ -69,6 +69,7 @@ class Settings:
 
     # ---- L1 Prompt Sanitization ---------------------------------------- #
     sanitizer_enabled: bool = field(default_factory=lambda: _envb("SANITIZER_ENABLED", True))
+    max_prompt_chars: int = field(default_factory=lambda: _envi("MAX_PROMPT_CHARS", 4000))
 
     # ---- L2 Semantic Intent Guardrail ----------------------------------- #
     embedding_model: str = field(

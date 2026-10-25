@@ -132,11 +132,15 @@ export async function sendSmtp({ url, from, to, subject, body, timeoutMs = 8000 
       await cmd(b64(pass), 235);
     }
 
-    await cmd(`MAIL FROM:<${from}>`, 250);
-    await cmd(`RCPT TO:<${to}>`, 250);
+    const safeFrom = String(from ?? "").replace(/[\r\n<>]/g, "");
+    const safeTo = String(to ?? "").replace(/[\r\n<>]/g, "");
+    const safeSubject = String(subject ?? "").replace(/[\r\n]/g, " ");
+
+    await cmd(`MAIL FROM:<${safeFrom}>`, 250);
+    await cmd(`RCPT TO:<${safeTo}>`, 250);
     await cmd("DATA", 354);
     const headers =
-      `From: ${from}\r\nTo: ${to}\r\nSubject: ${subject}\r\n` +
+      `From: ${safeFrom}\r\nTo: ${safeTo}\r\nSubject: ${safeSubject}\r\n` +
       `MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n`;
     // Dot-stuff any lines that begin with '.' per RFC 5321 §4.5.2.
     const safeBody = String(body).replace(/\r?\n/g, "\r\n").replace(/^\./gm, "..");

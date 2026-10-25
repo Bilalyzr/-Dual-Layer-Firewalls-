@@ -419,6 +419,18 @@ class TestVulnerabilityAndSessions:
 # --------------------------------------------------------------------------- #
 class TestApiContracts:
 
+    def test_prompt_too_large_413(self, client):
+        r = client.post("/v1/chat/completions", json={
+            "model": "gpt-4o",
+            "prompt": "A" * 4500,
+            "user_id": "u-oversized",
+        })
+        assert r.status_code == 413
+        body = r.json()
+        assert body["error"] == "prompt too large"
+        assert body["limit"] == 4000
+        assert body["length"] == 4500
+
     def test_health(self, client):
         r = client.get("/health")
         assert r.status_code == 200

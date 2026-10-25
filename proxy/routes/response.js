@@ -11,6 +11,7 @@
  * `x-ops-token` header. Unset (demo default) leaves the surface open, consistent
  * with the rest of the dashboard's read/ops endpoints.
  */
+import crypto from "crypto";
 import { Router } from "express";
 import {
   responseMode,
@@ -26,10 +27,17 @@ import { parseCidr } from "../lib/cidr.js";
 
 const router = Router();
 
+function safeTokenEqual(expected, provided) {
+  if (typeof expected !== "string" || typeof provided !== "string") return false;
+  const a = crypto.createHash("sha256").update(expected, "utf8").digest();
+  const b = crypto.createHash("sha256").update(provided, "utf8").digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function opsGuard(req, res, next) {
   const required = process.env.OPS_TOKEN;
   if (!required) return next();
-  if (req.headers["x-ops-token"] === required) return next();
+  if (safeTokenEqual(required, req.headers["x-ops-token"])) return next();
   return res.status(403).json({ error: "forbidden", detail: "invalid or missing x-ops-token" });
 }
 router.use(opsGuard);

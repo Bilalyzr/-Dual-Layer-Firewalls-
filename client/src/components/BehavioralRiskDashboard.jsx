@@ -34,7 +34,6 @@ export default function BehavioralRiskDashboard({ userId }) {
   const [loading, setLoading] = useState(false);
   const [showDecision, setShowDecision] = useState(false);
   const [riskHistory, setRiskHistory] = useState([]);
-  const [stats, setStats] = useState(null);
   // Chart UX: hover crosshair index, range filter (0=all / 15 / 60 minutes),
   // and a pause that freezes history + the live pulse (a11y for flashing).
   const [hover, setHover] = useState(null);
@@ -63,20 +62,6 @@ export default function BehavioralRiskDashboard({ userId }) {
       }].slice(-30);
     });
   }, [latest, paused]);
-
-  // §25 — Command Center aggregates: poll /api/behavior/stats every 5s (and on new events).
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const r = await fetch("/api/behavior/stats");
-        if (r.ok && alive) setStats(await r.json());
-      } catch {}
-    };
-    load();
-    const id = setInterval(load, 5000);
-    return () => { alive = false; clearInterval(id); };
-  }, [latest?.risk_score]);
 
   const sendEvent = async (type) => {
     setLoading(true);
@@ -157,55 +142,8 @@ export default function BehavioralRiskDashboard({ userId }) {
         <span className={`dot ${connected ? "dot-on" : "dot-off"}`} />
       </div>
 
-      {/* §25 — Behavioral Risk Command Center: fleet-wide aggregates */}
-      {stats && (
-        <div className="behavioral-command-center">
-          <div className="risk-section-lbl risk-section-first">fleet snapshot</div>
-          <div className="behavioral-metrics-grid" style={{ marginBottom: 8 }}>
-            {[
-              { label: "Active Users", value: stats.active_users ?? 0, color: "var(--cyan)" },
-              { label: "Active Sessions", value: stats.active_sessions ?? 0, color: "var(--cyan)" },
-              { label: "Low Risk", value: stats.low_risk_sessions ?? 0, color: "var(--green)" },
-              { label: "Medium Risk", value: stats.medium_risk_sessions ?? 0, color: "var(--yellow)" },
-              { label: "High Risk", value: stats.high_risk_sessions ?? 0, color: "var(--red)" },
-              { label: "Blocked", value: stats.blocked_sessions ?? 0, color: "var(--red)" },
-            ].map((m) => (
-              <div key={m.label} className="behavioral-metric">
-                <div className="behavioral-metric-val" style={{ color: m.color }}>{m.value}</div>
-                <div className="behavioral-metric-lbl">{m.label}</div>
-              </div>
-            ))}
-          </div>
-          {stats.user_risk_table?.length > 0 && (
-            <div className="shap-block">
-              <div className="muted small" style={{ marginBottom: 4 }}>USER-LEVEL RISK ({stats.total_events} events)</div>
-              <table className="risk-user-table" style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                <thead>
-                  <tr className="muted">
-                    <th style={{ textAlign: "left", padding: "2px 4px" }}>User</th>
-                    <th style={{ textAlign: "right", padding: "2px 4px" }}>Events</th>
-                    <th style={{ textAlign: "right", padding: "2px 4px" }}>Peak Risk</th>
-                    <th style={{ textAlign: "right", padding: "2px 4px" }}>Last</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.user_risk_table.slice(0, 8).map((u) => (
-                    <tr key={u.user_id}>
-                      <td style={{ padding: "2px 4px" }}>{u.user_id || "—"}</td>
-                      <td style={{ textAlign: "right", padding: "2px 4px" }}>{u.events}</td>
-                      <td style={{ textAlign: "right", padding: "2px 4px", color: u.max_risk > 70 ? "var(--red)" : u.max_risk > 30 ? "var(--yellow)" : "var(--green)" }}>{Math.round(u.max_risk)}</td>
-                      <td style={{ textAlign: "right", padding: "2px 4px", color: riskColor(u.last_level) }}>{u.last_level}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* §34 — Risk gauge + level + decision */}
-      <div className={`risk-section-lbl${stats ? "" : " risk-section-first"}`}>live session <b>{userId || "—"}</b></div>
+      <div className="risk-section-lbl risk-section-first">live session <b>{userId || "—"}</b></div>
       <div className="bio-grid">
         <div className="gauge" style={{ "--g-color": color, "--g-pct": score, color }}>
           <div className="gauge-val" style={{ color }}>{score === 0 ? "—" : Math.round(score)}</div>

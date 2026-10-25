@@ -82,4 +82,23 @@ describe("real SMTP client", () => {
       server.close();
     }
   });
+
+  it("strips CRLF header injection from from/to/subject", async () => {
+    const server = fakeSmtpServer();
+    await new Promise((res) => server.listen(0, "127.0.0.1", res));
+    const port = server.address().port;
+    try {
+      await sendSmtp({
+        url: `smtp://user:pass@127.0.0.1:${port}`,
+        from: "fw@local\r\nRCPT TO:<evil@attacker.tld>",
+        to: "soc@local",
+        subject: "Alert\r\nBcc: spy@attacker.tld",
+        body: "test",
+      });
+      expect(server._received.data).not.toContain("\nBcc:");
+      expect(server._received.data).toContain("Subject: Alert  Bcc: spy@attacker.tld");
+    } finally {
+      server.close();
+    }
+  });
 });

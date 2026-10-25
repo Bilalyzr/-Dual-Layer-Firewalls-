@@ -17,18 +17,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Async SHAP result store (Req 3.4). request_id -> {status, result|error}.
-_SHAP_STORE: dict[str, dict[str, Any]] = {}
-# Per-user SHAP throttle: userId -> last-run timestamp (avoids re-running the
-# ~1.2s SHAP computation on every keystroke batch).
-_SHAP_LAST: dict[str, float] = {}
-
-from .biometric.anomaly import (
-    DEFAULT_MIN_SAMPLES,
-    DEFAULT_Z_THRESHOLD,
-    build_baseline,
-    score_batch,
-)
 from .classifier.model import get_classifier
 
 app = FastAPI(title="Orthrus — Processing Engine", version="1.0.0")
@@ -81,6 +69,18 @@ def _warm_models() -> None:
     except Exception as exc:  # pragma: no cover — warm is best-effort
         print(f"[engine] embedding warm skipped: {exc}")
 
+    try:
+        from .behavioral.anomaly_svm import model_ready as _svm_ready, _load as _svm_load
+        from .behavioral.threat_engine import model_ready as _rf_ready, _load as _rf_load
+
+        if _svm_ready():
+            _svm_load()
+        if _rf_ready():
+            _rf_load()
+        print("[engine] behavioral models warmed")
+    except Exception as exc:  # pragma: no cover — warm is best-effort
+        print(f"[engine] behavioral warm skipped: {exc}")
+
 
 if os.getenv("ENGINE_WARM_MODELS", "true").lower() == "true":
     _warm_models()
@@ -105,16 +105,6 @@ class ClassifyResponse(BaseModel):
     llmguard_risk: float = 0.0          # LLM Guard (Protect AI) risk score
     llmguard_detected: bool = False     # LLM Guard flagged injection
     semantic_used: bool = False         # v2 MiniLM+XGBoost contributed to the score
-
-
-class ScoreRequest(BaseModel):
-    dwell_history: list[float] = Field(default_factory=list)
-    flight_history: list[float] = Field(default_factory=list)
-    prior_n: int = 0
-    dwell_times: list[float] = Field(default_factory=list)
-    flight_times: list[float] = Field(default_factory=list)
-    min_samples: int | None = None
-    z_threshold: float | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -219,128 +209,6 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
         llmguard_detected=bool(llmguard_detected),
         semantic_used=semantic_used,
     )
-
-
-@app.post("/score-batch")
-async def score_batch_route(req: ScoreRequest) -> dict[str, Any]:
-    min_samples = req.min_samples or int(
-        os.getenv("BIOMETRIC_MIN_SAMPLES", DEFAULT_MIN_SAMPLES)
-    )
-    z_threshold = req.z_threshold or float(
-        os.getenv("BIOMETRIC_Z_THRESHOLD", DEFAULT_Z_THRESHOLD)
-    )
-    baseline = build_baseline(
-        dwell_history=req.dwell_history,
-        flight_history=req.flight_history,
-        prior_n=req.prior_n,
-    )
-    result = score_batch(
-        baseline=baseline,
-        dwell_times=req.dwell_times,
-        flight_times=req.flight_times,
-        min_samples=min_samples,
-        z_threshold=z_threshold,
-        dwell_history=req.dwell_history,
-        flight_history=req.flight_history,
-    )
-    response = {
-        "trust_score": result.trust_score,
-        "risk_score": result.risk_score,
-        "z": result.z,
-        "cold_start": result.cold_start,
-        "reason": result.reason,
-        "dwell_mean": result.dwell_mean,
-        "flight_mean": result.flight_mean,
-        "model_used": result.model_used,
-    }
-    if result.p_genuine is not None:
-        response["p_genuine"] = result.p_genuine
-
-    # Async SHAP (Req 3.4) — fire-and-forget off the scoring path. The result is
-    # stored and retrievable via /shap/{request_id}; never awaited here.
-    # Throttled per-user: SHAP is for audit/compliance, not real-time display, so
-    # we recompute at most every few seconds (avoids burning ~1.2s of CPU on every
-    # 6-key batch).
-    SHAP_THROTTLE_S = float(os.getenv("SHAP_THROTTLE_S", "8"))
-    # Throttle key: a signature of this user's baseline so repeated batches from
-    # the same user share a throttle bucket (the engine scores anonymously, so
-    # we derive a proxy identity from the baseline length + first sample).
-    throttle_key = f"u{req.prior_n}:{req.dwell_history[0]:.1f}" if req.dwell_history else "anon"
-    def _should_run_shap() -> bool:
-        now = time.time()
-        last = _SHAP_LAST.get(throttle_key, 0.0)
-        if now - last < SHAP_THROTTLE_S:
-            return False
-        _SHAP_LAST[throttle_key] = now
-        return True
-
-    if (
-        result.model_used == "ensemble"
-        and not result.cold_start
-        and _should_run_shap()
-    ):
-        import numpy as np
-        from .biometric.features import (
-            load_seq_normalizer, load_stats_scaler, sequence_stats,
-        )
-        from .biometric.lstm_model import embed_batch
-        from .biometric.anomaly import _build_sequence, SEQ_LEN
-
-        try:
-            pairs = _build_sequence(
-                req.dwell_history, req.flight_history,
-                req.dwell_times, req.flight_times,
-            )
-            seq = np.array(pairs, dtype=np.float32).reshape(1, SEQ_LEN, 2)
-            seq_norm = load_seq_normalizer()
-            seq_n = seq_norm.transform(seq) if seq_norm else seq
-            bl_dwell_mean = float(np.mean(req.dwell_history)) if req.dwell_history else 0.0
-            bl_flight_mean = float(np.mean(req.flight_history)) if req.flight_history else 0.0
-            stats_v = sequence_stats(seq[0], bl_dwell_mean, bl_flight_mean).reshape(1, -1)
-            stats_scaler = load_stats_scaler()
-            stats_n = (stats_scaler.transform(stats_v).astype(np.float32)
-                       if stats_scaler else stats_v.astype(np.float32))
-            emb = embed_batch(seq_n)
-            feats = np.concatenate([emb, stats_n], axis=1).astype(np.float32)
-
-            request_id = f"shp-{os.urandom(6).hex()}"
-            response["shap_request_id"] = request_id
-            asyncio.create_task(_run_shap(request_id, feats))
-        except Exception as exc:  # SHAP must never break scoring
-            response["shap_error"] = f"{type(exc).__name__}: {exc}"
-
-    return response
-
-
-# Keep the in-memory SHAP result store bounded (results are short-lived, fetched
-# once by the dashboard) so a long-running engine can't leak memory.
-_SHAP_STORE_MAX = 200
-
-
-def _store_shap(request_id: str, entry: dict[str, Any]) -> None:
-    _SHAP_STORE[request_id] = entry
-    if len(_SHAP_STORE) > _SHAP_STORE_MAX:
-        # Drop the oldest insertions (dicts preserve insertion order in 3.7+).
-        for stale in list(_SHAP_STORE.keys())[: len(_SHAP_STORE) - _SHAP_STORE_MAX]:
-            _SHAP_STORE.pop(stale, None)
-
-
-async def _run_shap(request_id: str, feats) -> None:
-    """Background SHAP task — stores result for /shap/{request_id} retrieval."""
-    try:
-        from .biometric.explain import explain_async
-        result = await explain_async(feats, top_k=6)
-        _store_shap(request_id, {"status": "done", "result": result})
-    except Exception as exc:
-        _store_shap(request_id, {"status": "error", "error": f"{type(exc).__name__}: {exc}"})
-
-
-@app.get("/shap/{request_id}")
-def get_shap(request_id: str) -> dict[str, Any]:
-    entry = _SHAP_STORE.get(request_id)
-    if entry is None:
-        return {"status": "pending", "request_id": request_id}
-    return {"request_id": request_id, **entry}
 
 
 @app.get("/health")

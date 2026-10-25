@@ -53,14 +53,16 @@ function highlightTerms(text, ws) {
 // The inspection chain a prompt really travels (7 layers + the LLM answer);
 // the reply loader's stage ticker names these in order while in flight.
 const PIPELINE = ["sanitize", "sentiment", "cascade", "memory", "behavior", "rag", "decision", "llm"];
+const MAX_PROMPT_CHARS = 4000;
 
-export default function ChatPanel({ userId }) {
+export default function ChatPanel({ userId, onModuleAnalysis = null }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(0);
   const [stepUp, setStepUp] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState(null);
+  const [inFlightPrompt, setInFlightPrompt] = useState("");
   const logRef = useRef(null);
 
   // Keep the newest message in view — without this the log stays scrolled to
@@ -85,6 +87,7 @@ export default function ChatPanel({ userId }) {
     const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy) return;
     setBusy(true);
+    setInFlightPrompt(text.slice(0, 180));
     if (!_isRetry && text !== pendingPrompt) setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
     let scheduleRetry = false;
@@ -134,6 +137,7 @@ export default function ChatPanel({ userId }) {
         return;
       }
       if (data.blocked) {
+        if (data.moduleScores && onModuleAnalysis) onModuleAnalysis(data.moduleScores);
         const prob = data.verdict?.classifier?.threatProbability;
         setMessages((m) => [
           ...m,
@@ -147,9 +151,11 @@ export default function ChatPanel({ userId }) {
             blocked: true,
             verdict: data.verdict,
             wordScores: data.wordScores,
+            moduleScores: data.moduleScores || null,
           },
         ]);
       } else if (data.error) {
+        if (data.moduleScores && onModuleAnalysis) onModuleAnalysis(data.moduleScores);
         // Friendly rendering of the common LLM errors.
         const detail = String(data.detail || "");
         const isTimeout = /timeout|aborted|ETIMEDOUT/i.test(detail);
@@ -162,14 +168,25 @@ export default function ChatPanel({ userId }) {
           : isUnreachable
           ? `Could not reach the LLM provider (${data.error}). Check your network or API key.`
           : `${data.error}: ${detail.slice(0, 120) || "no detail"}`;
-        setMessages((m) => [...m, { role: "system", text: msg, icon: "alert" }]);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "system",
+            text: msg,
+            icon: "alert",
+            verdict: data.verdict,
+            moduleScores: data.moduleScores || null,
+          },
+        ]);
       } else {
+        if (data.moduleScores && onModuleAnalysis) onModuleAnalysis(data.moduleScores);
         setMessages((m) => [
           ...m,
           {
             role: "assistant",
             text: data.answer || "(empty response)",
             verdict: data.verdict,
+            moduleScores: data.moduleScores || null,
             simulated: data.simulated,
             llm: data.llm || null,
             totalMs: data.latencyMs ?? null,
@@ -261,7 +278,12 @@ export default function ChatPanel({ userId }) {
             </div>
             <div className="msg-text">
               {Ico && <span className="msg-ico"><Ico size={13} /></span>}
-              {hlWs ? highlightTerms(m.text, hlWs) : m.text}
+              {(() => {
+                const shown = m.role === "user" && m.text.length > 400
+                  ? `${m.text.slice(0, 400)}… [${m.text.length.toLocaleString()} chars]`
+                  : m.text;
+                return hlWs ? highlightTerms(shown, hlWs) : shown;
+              })()}
             </div>
             {m.wordScores && (m.wordScores.negative_terms?.length > 0 || m.wordScores.positive_terms?.length > 0) && (
               <div className="word-scores">
@@ -308,7 +330,7 @@ export default function ChatPanel({ userId }) {
                   <span className="rl-orb" aria-hidden="true" />
                   <span className="shimmer-text">{stage < PIPELINE.length - 1
                     ? <>inspecting · <b>{PIPELINE[Math.min(stage, PIPELINE.length - 1)]}</b></>
-                    : "answering"}</span>
+                    : "answering (all 6 security modules approved)"}</span>
                   <span className="pl-dots"><i /><i /><i /></span>
                 </div>
                 <div className="rl-skel" aria-hidden="true">
@@ -325,11 +347,12 @@ export default function ChatPanel({ userId }) {
       <div className="chat-composer">
         <textarea
           className="composer-text"
-          placeholder="Type a prompt — Enter to send, Shift+Enter for newline"
+          placeholder="Type a prompt — Enter to send, Shift+Enter for newline (max 4,000 chars)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           rows={2}
+          style={input.length > MAX_PROMPT_CHARS ? { borderColor: "var(--red)" } : undefined}
         />
         <button
           className="btn composer-send"
@@ -339,6 +362,47 @@ export default function ChatPanel({ userId }) {
           title="Send prompt"
         >
           {busy ? "…" : "→"}
+        </button>
+      </div>
+      <div
+        className="composer-meta small"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 6,
+          padding: "0 2px",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          className="mono"
+          style={{
+            color:
+              input.length > MAX_PROMPT_CHARS
+                ? "var(--red)"
+                : input.length > MAX_PROMPT_CHARS * 0.85
+                ? "var(--yellow)"
+                : "var(--muted)",
+            fontSize: 11,
+          }}
+        >
+          {input.length.toLocaleString()} / {MAX_PROMPT_CHARS.toLocaleString()} chars
+          {input.length > MAX_PROMPT_CHARS && (
+            <b style={{ marginLeft: 6 }}>
+              · ⚠ Prompt too large (+{(input.length - MAX_PROMPT_CHARS).toLocaleString()} over limit — LLM10)
+            </b>
+          )}
+        </span>
+        <button
+          type="button"
+          className="drill-btn"
+          disabled={busy}
+          onClick={() => send("A".repeat(4500))}
+          title="Send a 4,500-character payload to validate the firewall’s ‘prompt too large’ (HTTP 413 / OWASP LLM10) protection"
+        >
+          Test “Prompt Too Large” (4,500 chars)
         </button>
       </div>
     </section>

@@ -7,6 +7,7 @@ The BA-ZTA paper uses a DNN with 3 outputs; the MVP uses Random Forest
 """
 from __future__ import annotations
 import os
+import threading
 from pathlib import Path
 
 import joblib
@@ -14,6 +15,7 @@ import numpy as np
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 RF_PATH = MODEL_DIR / "behavioral_rf.joblib"
+_lock = threading.Lock()
 
 
 def _dnn_enabled() -> bool:
@@ -41,11 +43,13 @@ def model_ready() -> bool:
 def _load():
     global _rf
     if _rf is None:
-        if not model_ready():
-            raise FileNotFoundError(
-                f"behavioral RF not found at {RF_PATH}. Run: python -m engine.behavioral.train_behavioral"
-            )
-        _rf = joblib.load(RF_PATH)
+        with _lock:
+            if _rf is None:
+                if not model_ready():
+                    raise FileNotFoundError(
+                        f"behavioral RF not found at {RF_PATH}. Run: python -m engine.behavioral.train_behavioral"
+                    )
+                _rf = joblib.load(RF_PATH)
     return _rf
 
 

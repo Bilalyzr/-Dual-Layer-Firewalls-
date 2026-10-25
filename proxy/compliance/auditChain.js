@@ -13,7 +13,10 @@
 import crypto from "node:crypto";
 
 const MAX = 10000;
+const GENESIS_HASH = "0".repeat(64);
 const _chain = []; // [{ index, ts, type, payload, prev, hash }]
+let _nextIndex = 0;
+let _anchorPrev = GENESIS_HASH;
 
 function _hash(entry) {
   // hash covers everything except the hash field itself
@@ -23,9 +26,9 @@ function _hash(entry) {
 
 /** Append a tamper-evident entry. Returns the entry (with its hash). */
 export function appendAudit(type, payload) {
-  const prev = _chain.length ? _chain[_chain.length - 1].hash : "0".repeat(64);
+  const prev = _chain.length ? _chain[_chain.length - 1].hash : _anchorPrev;
   const entry = {
-    index: _chain.length,
+    index: _nextIndex++,
     ts: new Date().toISOString(),
     type,
     payload,
@@ -33,13 +36,16 @@ export function appendAudit(type, payload) {
   };
   entry.hash = _hash(entry);
   _chain.push(entry);
-  if (_chain.length > MAX) _chain.shift(); // ring buffer (production: never shift)
+  if (_chain.length > MAX) {
+    const evicted = _chain.shift(); // ring buffer: advance anchor to evicted entry's hash
+    _anchorPrev = evicted.hash;
+  }
   return entry;
 }
 
 /** Verify the whole chain is intact (no tampering). Returns {valid, brokenAt?} */
 export function verifyChain() {
-  let prev = "0".repeat(64);
+  let prev = _anchorPrev;
   for (let i = 0; i < _chain.length; i++) {
     const e = _chain[i];
     if (e.prev !== prev) return { valid: false, brokenAt: i };
@@ -58,4 +64,6 @@ export function auditChain(limit = 100) {
 /** Test hook. */
 export function _resetChain() {
   _chain.length = 0;
+  _nextIndex = 0;
+  _anchorPrev = GENESIS_HASH;
 }

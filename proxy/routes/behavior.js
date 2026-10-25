@@ -8,7 +8,7 @@ import { Router } from "express";
 import { publish } from "../middleware/eventBus.js";
 
 const router = Router();
-const ENGINE_URL = process.env.ENGINE_URL || "http://localhost:8011";
+const ENGINE_URL = process.env.ENGINE_URL || "http://127.0.0.1:8011";
 
 router.post("/analyze", async (req, res) => {
   try {

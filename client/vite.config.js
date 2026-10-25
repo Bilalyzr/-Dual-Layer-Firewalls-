@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const target = process.env.PROXY_URL || "http://localhost:4001";
+const target = process.env.PROXY_URL || "http://127.0.0.1:4001";
 const port = parseInt(process.env.CLIENT_PORT || "5174", 10);
 
 export default defineConfig({

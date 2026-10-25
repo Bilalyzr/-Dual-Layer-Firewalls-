@@ -35,7 +35,7 @@ vi.mock("../agents/orchestrator.js", () => ({
 import { createApp } from "../app.js";
 import { publish, subscribe, subscriberCount, busMode } from "../middleware/eventBus.js";
 
-const ROLES = ["all", "gateway", "firewall", "agent", "biometric"];
+const ROLES = ["all", "gateway", "firewall", "agent"];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -68,26 +68,11 @@ describe("app factory", () => {
 });
 
 describe("role route ownership", () => {
-  it("firewall role serves /api/chat but not biometric", async () => {
+  it("firewall role serves /api/chat", async () => {
     const app = createApp({ role: "firewall" });
     const chat = await request(app).post("/api/chat").send({ prompt: "what is 2+2?" });
     expect(chat.status).toBe(200);
     expect(chat.body.blocked).toBe(false);
-
-    const bio = await request(app).get("/api/biometric/status/u1");
-    expect(bio.status).toBe(404);
-  });
-
-  it("biometric role serves /api/biometric but not chat", async () => {
-    const app = createApp({ role: "biometric" });
-    const bio = await request(app)
-      .post("/api/biometric/batch")
-      .send({ userId: "u1", events: [{ d: 100, f: 50 }] });
-    expect(bio.status).toBe(200);
-    expect(bio.body.accepted).toBe(1);
-
-    const chat = await request(app).post("/api/chat").send({ prompt: "hi" });
-    expect(chat.status).toBe(404);
   });
 
   it("agent role serves the internal Trifecta endpoint, not chat", async () => {

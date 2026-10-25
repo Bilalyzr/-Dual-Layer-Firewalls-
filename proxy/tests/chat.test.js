@@ -48,6 +48,22 @@ describe("POST /api/chat — firewall pipeline", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects oversized prompts (prompt too large -> HTTP 413 / LLM10)", async () => {
+    const oversized = "A".repeat(4500);
+    const res = await request(buildApp("enforce"))
+      .post("/api/chat")
+      .send({ prompt: oversized, userId: "u1" });
+    expect(res.status).toBe(413);
+    expect(res.body.error).toBe("prompt too large");
+    expect(res.body.blocked).toBe(true);
+    expect(res.body.category).toBe("LLM10");
+    expect(res.body.limit).toBe(4000);
+    expect(res.body.length).toBe(4500);
+    expect(res.body.moduleScores?.finalDecisionEngine?.triggeredBy).toBe("length_guard");
+    expect(classifyPrompt).not.toHaveBeenCalled();
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
   it("blocks a heuristic jailbreak in enforce mode", async () => {
     classifyPrompt.mockResolvedValue({ threatProbability: 0.2, ready: true, latencyMs: 1 });
     const res = await request(buildApp("enforce"))

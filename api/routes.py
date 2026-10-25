@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import firewall_pipeline
 from core.config import SETTINGS
-from core.pipeline import PipelineOutcome
+from core.pipeline import PipelineOutcome, inspect_prompt_modules
 from guardrails import behavioral
 from models.schemas import ChatCompletionRequest
 from services import audit_log, litellm_client, metrics, qdrant_client
@@ -27,11 +27,36 @@ from guardrails.input_filter import status as intent_status
 router = APIRouter()
 
 
+@router.get("/")
+def root():
+    return {
+        "service": SETTINGS.api_title,
+        "version": "2.0.0",
+        "status": "ok",
+        "endpoints": {
+            "health": "/health",
+            "inspect": "/v1/inspect",
+            "chat_completions": "/v1/chat/completions",
+            "reports": "/reports",
+            "testcase_report": "/reports/testcase",
+        },
+    }
+
+
 @router.post("/v1/chat/completions")
 def chat_completions(outcome: PipelineOutcome = Depends(firewall_pipeline)):
     if outcome.blocked:
         return JSONResponse(status_code=outcome.status_code, content=outcome.body)
     return JSONResponse(status_code=200, content=outcome.body)
+
+
+@router.post("/v1/inspect")
+def inspect_modules(req: ChatCompletionRequest):
+    """Dry-run all 6 security analysis modules (Sanitization, AI Threat Detection,
+    Semantic Attack Memory, Behavioral Analysis, RAG Security, and Final Decision)
+    without invoking the upstream LLM.
+    """
+    return inspect_prompt_modules(req)
 
 
 @router.get("/health")
@@ -116,15 +141,47 @@ class RealtimeBatchRequest(BaseModel):
 
 @router.post("/realtime/samples")
 def realtime_samples_batch(req: RealtimeBatchRequest):
-    """Bulk import (dataset feeds): one transaction, deduped server-side."""
-    from services import audit_log
+    """Bulk import (dataset feeds): one transaction, deduped server-side.
 
-    rows = [{"text": s.get("prompt") or s.get("text") or "",
-             "label": int(s.get("label", 1)),
-             "source": s.get("source") or "dataset",
-             "scores": {}} for s in (req.samples or [])]
+    Includes a fast lexical/regex poisoning guard on benign-labeled (label=0)
+    samples so bulk imports cannot be used to flip attack prompts into benign
+    training examples.
+    """
+    from services import audit_log, policy_engine
+
+    rows = []
+    quarantined = 0
+    for s in (req.samples or []):
+        text = s.get("prompt") or s.get("text") or ""
+        label = int(s.get("label", 1))
+        risk = float(s.get("risk", 0.0) or 0.0)
+        if label == 0 and text:
+            probe = policy_engine.deobfuscate(text)
+            is_poison = (
+                risk >= 0.5
+                or any(p.search(text) or p.search(probe) for p in policy_engine.JAILBREAK_PATTERNS)
+                or policy_engine.word_sentiment(text).get("weightage", 0.0) >= 0.65
+            )
+            if is_poison:
+                audit_log.record_vulnerability(
+                    prompt_text=text, layer="batch-poison-guard",
+                    risk=max(risk, 0.75), source="batch-sampling",
+                )
+                quarantined += 1
+                continue
+        rows.append({
+            "text": text,
+            "label": label,
+            "source": s.get("source") or "dataset",
+            "scores": {},
+        })
     result = audit_log.record_training_samples_batch(rows)
-    return {"status": "ok", **result, "submitted": len(rows)}
+    return {
+        "status": "ok",
+        **result,
+        "quarantined": quarantined,
+        "submitted": len(req.samples or []),
+    }
 
 
 @router.get("/realtime/stats")

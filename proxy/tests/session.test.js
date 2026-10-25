@@ -28,18 +28,16 @@ import {
   createSession,
   shouldStepUp,
   sessionMiddleware,
+  markStepUpRequired,
 } from "../auth/session.js";
 import sessionRouter from "../routes/session.js";
-import biometricRouter from "../routes/biometric.js";
 import chatRouter from "../routes/chat.js";
-import { scoreBiometricBatch } from "../firewall/mlClient.js";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use(sessionMiddleware);
   app.use("/api/session", sessionRouter);
-  app.use("/api/biometric", biometricRouter);
   app.use("/api/chat", chatRouter);
   return app;
 }
@@ -98,10 +96,8 @@ describe("POST /api/session", () => {
   });
 });
 
-describe("biometric enforce → step-up → chat gate", () => {
+describe("step-up → chat gate", () => {
   it("marks the session for step-up and then blocks chat", async () => {
-    process.env.BIOMETRIC_MODE = "enforce";
-    process.env.BIOMETRIC_STEPUP_THRESHOLD = "50";
     process.env.FIREWALL_MODE = "shadow";
     const app = buildApp();
 
@@ -109,20 +105,15 @@ describe("biometric enforce → step-up → chat gate", () => {
     const { body } = await request(app).post("/api/session").send({ userId: "u-collapse" });
     const auth = { Authorization: `Bearer ${body.token}` };
 
-    // Engine returns collapsed trust for an established (non cold-start) user.
-    scoreBiometricBatch.mockResolvedValue({
-      trust_score: 20, risk_score: 80, z: 4.1, cold_start: false, reason: "anomalous cadence",
-    });
-
-    const bio = await request(app)
-      .post("/api/biometric/batch")
-      .set(auth)
-      .send({ events: [{ d: 100, f: 50 }, { d: 110, f: 60 }] });
-    expect(bio.body.stepUpRequired).toBe(true);
+    await markStepUpRequired(body.sessionId, "anomalous session risk");
 
     // Chat must now be frozen until a WebAuthn assertion clears step-up.
     const chat = await request(app).post("/api/chat").set(auth).send({ prompt: "hello" });
     expect(chat.status).toBe(401);
     expect(chat.body.reason).toBe("step_up_required");
+
+    // Re-minting a session for the same locked userId must NOT bypass step-up MFA.
+    const reminted = await request(app).post("/api/session").send({ userId: "u-collapse" });
+    expect(reminted.body.trustState.stepUpRequired).toBe(true);
   });
 });

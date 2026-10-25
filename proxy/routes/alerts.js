@@ -3,7 +3,7 @@
  * /api/samples — low-confidence allowed traffic retained for review (Req 1.5).
  */
 import { Router } from "express";
-import { recentAlerts, sampleCount, stats } from "../db/mongo.js";
+import { recentAlerts, recentModuleAnalyses, sampleCount, stats } from "../db/mongo.js";
 import { engineHealth } from "../firewall/mlClient.js";
 import { llmConfig } from "../llm/client.js";
 import { strictReal } from "../lib/strict.js";
@@ -27,6 +27,12 @@ router.get("/", async (_req, res) => {
 
 router.get("/samples", async (_req, res) => {
   res.json({ samples: await sampleCount() });
+});
+
+router.get("/module-analyses", async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || "30", 10)));
+  const moduleAnalyses = await recentModuleAnalyses(limit);
+  res.json({ moduleAnalyses });
 });
 
 /** Operational status: modes, thresholds, engine + LLM + db health. */

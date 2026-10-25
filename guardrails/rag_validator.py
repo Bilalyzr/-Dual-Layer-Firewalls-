@@ -13,7 +13,6 @@ from __future__ import annotations
 from core.config import SETTINGS
 from models.schemas import RagValidationResult
 from services import policy_engine, qdrant_client
-from services.embedding_service import cosine
 
 
 def validate(embedding_vector: list[float], query_text: str = "") -> RagValidationResult:
@@ -31,52 +30,41 @@ def validate(embedding_vector: list[float], query_text: str = "") -> RagValidati
     risk = 0.0
     for hit in hits:
         doc = hit["text"]
+        sim = float(hit.get("score", 0.0))
         reasons: list[str] = []
 
-        # 1) Context-intent consistency (PDF §2.2 check #1)
-        if query_text:
-            sim = cosine(embedding_vector, _embed_cache(query_text))
-            if sim < SETTINGS.rag_min_similarity:
-                reasons.append(f"intent-mismatch(sim={sim:.2f})")
+        # 1) Context-intent consistency (PDF §2.2 check #1):
+        #    Use the document's actual cosine similarity to the query vector.
+        #    Unrelated KB entries below rag_min_similarity are ignored rather
+        #    than raising false-positive poisoning risk on everyday chat prompts.
+        if sim < SETTINGS.rag_min_similarity:
+            reasons.append(f"intent-mismatch(sim={sim:.2f})")
 
         # 2) Imperatives in passive data (PDF §2.2 check #2)
         imperatives = policy_engine.imperative_hits(doc)
         if imperatives:
-            result.imperative_flags.append(hit.get("source", "unknown"))
+            if sim >= SETTINGS.rag_min_similarity:
+                result.imperative_flags.append(hit.get("source", "unknown"))
+                risk = max(risk, 0.9)
             reasons.append("imperative-injection")
-            risk = max(risk, 0.9)
 
         # 3) Credential shapes inside the document (PDF §2.2 leak angle)
         if policy_engine.leak_hits(doc):
+            if sim >= SETTINGS.rag_min_similarity:
+                risk = max(risk, 0.7)
             reasons.append("credential-leak")
-            risk = max(risk, 0.7)
 
         # 4) Explicitly untrusted sources never reach the LLM.
         if hit.get("access") == "untrusted":
+            if sim >= SETTINGS.rag_min_similarity:
+                risk = max(risk, 0.8)
             reasons.append("untrusted-source")
-            risk = max(risk, 0.8)
 
         if reasons:
-            result.dropped_docs.append(f'{hit.get("source", "doc")} [{", ".join(reasons)}]')
+            if sim >= SETTINGS.rag_min_similarity:
+                result.dropped_docs.append(f'{hit.get("source", "doc")} [{", ".join(reasons)}]')
         else:
             result.safe_rag_docs.append(doc)
 
     result.risk = round(risk, 4)
     return result
-
-
-# --------------------------------------------------------------------------- #
-# Tiny embedding memo: L2 already embedded the sanitized prompt; re-embedding
-# the same text for consistency scoring would double the latency budget.
-# --------------------------------------------------------------------------- #
-_CACHE: dict[str, list[float]] = {}
-
-
-def _embed_cache(text: str) -> list[float]:
-    if text not in _CACHE:
-        from services.embedding_service import embed
-
-        _CACHE[text] = embed(text).tolist()
-        if len(_CACHE) > 64:
-            _CACHE.pop(next(iter(_CACHE)))
-    return _CACHE[text]

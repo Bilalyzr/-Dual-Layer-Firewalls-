@@ -22,8 +22,16 @@ const router = Router();
 // so it's exposed but grouped separately in the UI.
 const TOGGLEABLE = Object.keys(CATEGORIES);
 
+const isAnonSessionUser = (u) => !u || u === "anon" || /^user-[0-9a-f]{8}$/i.test(u);
+
 router.get("/:userId", (req, res) => {
-  const userId = req.params.userId || "anon";
+  const userId = req.params.userId || req.session?.userId || "anon";
+  if (!isAnonSessionUser(req.session?.userId) && req.params.userId && req.session.userId !== req.params.userId) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "Cannot read another user's consent records.",
+    });
+  }
   const raw = getConsent(userId);
   // Normalize into a flat { category: boolean } map plus the full records.
   const granted = {};
@@ -38,7 +46,13 @@ router.get("/:userId", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const userId = req.body?.userId || "anon";
+  if (!isAnonSessionUser(req.session?.userId) && req.body?.userId && req.session.userId !== req.body.userId) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "Cannot modify another user's consent records.",
+    });
+  }
+  const userId = req.body?.userId || req.session?.userId || "anon";
   const category = req.body?.category;
   const granted = Boolean(req.body?.granted);
   if (!category || !TOGGLEABLE.includes(category)) {

@@ -357,7 +357,7 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         prev_acc = None
     fpr_cap = 0.05 if prev_fpr is None else max(0.05, float(prev_fpr) + 0.02)
     if new_fpr is not None and float(new_fpr) > fpr_cap:
-        print(f"[retrain-realtime] PROMOTION REJECTED — challenger benign "
+        print(f"[retrain-realtime] PROMOTION REJECTED - challenger benign "
               f"false-positive rate {float(new_fpr):.4f} > {fpr_cap:.4f}; "
               "keeping the live model (blocking users is worse than missing attacks)")
         try:  # governance log — surfaces in the Test-Case Report
@@ -381,8 +381,8 @@ def retrain_from_realtime(samples: list[tuple[str, int]],
         }
     if prev_acc is not None and new_acc is not None and \
             float(new_acc) < float(prev_acc) - 0.01:
-        print(f"[retrain-realtime] PROMOTION REJECTED — challenger "
-              f"{float(new_acc):.4f} < champion {float(prev_acc):.4f} − 0.01; "
+        print(f"[retrain-realtime] PROMOTION REJECTED - challenger "
+              f"{float(new_acc):.4f} < champion {float(prev_acc):.4f} - 0.01; "
               "keeping the live model")
         try:  # governance log — surfaces in the Test-Case Report
             from services.report_store import append_record
@@ -552,8 +552,8 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
                 incumbent_f1 = None
 
         if incumbent_f1 is not None and challenger_f1 < float(incumbent_f1) - 0.005:
-            print(f"[retrain-realtime] fast tier PROMOTION REJECTED — challenger "
-                  f"{challenger_f1:.4f} < incumbent {float(incumbent_f1):.4f} − 0.005; "
+            print(f"[retrain-realtime] fast tier PROMOTION REJECTED - challenger "
+                  f"{challenger_f1:.4f} < incumbent {float(incumbent_f1):.4f} - 0.005; "
                   "keeping the live artifacts")
             try:  # governance log — surfaces in the Test-Case Report
                 from services.report_store import append_record

@@ -102,13 +102,23 @@ console.log(`  engine → :${ENGINE_PORT}   proxy → :${PROXY_PORT}   dashboard
 console.log(`  binding:  ${EXPOSE_LAN ? "LAN (0.0.0.0 — no auth; trusted networks only)" : "localhost only (set EXPOSE_LAN=1 for LAN access)"}${C.reset}\n`);
 
 // Engine first.
-start("engine", C.engine, PY, ["-m", "uvicorn", "engine.app:app", "--host", "127.0.0.1", "--port", ENGINE_PORT], { cwd: ROOT });
+const pyEnv = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" };
+start("engine", C.engine, PY, ["-m", "uvicorn", "engine.app:app", "--host", "127.0.0.1", "--port", ENGINE_PORT], { cwd: ROOT, env: pyEnv });
+
+// v2 7-Layer Firewall API (:8020) — powers /v1/inspect (6-module score breakdown) + sentiment/memory.
+const V2_PORT = process.env.V2_PORT || "8020";
+start("v2-api", C.engine, PY, ["-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", V2_PORT], { cwd: ROOT, env: pyEnv });
 
 // Proxy after a short delay (engine needs a moment to boot).
 setTimeout(() => {
   start("proxy", C.proxy, process.execPath, ["server.js"], {
     cwd: path.join(ROOT, "proxy"),
-    env: { ...process.env, ENGINE_URL: `http://localhost:${ENGINE_PORT}`, PROXY_PORT },
+    env: {
+      ...process.env,
+      ENGINE_URL: `http://127.0.0.1:${ENGINE_PORT}`,
+      REALTIME_API_URL: `http://127.0.0.1:${V2_PORT}`,
+      PROXY_PORT,
+    },
   });
 }, 2500);
 
@@ -123,7 +133,7 @@ const viteArgs = existsSync(VITE_BIN) ? baseViteArgs : ["vite", ...baseViteArgs]
 setTimeout(() => {
   start("client", C.client, viteCmd, viteArgs, {
     cwd: path.join(ROOT, "client"),
-    env: { ...process.env, PROXY_URL: `http://localhost:${PROXY_PORT}` },
+    env: { ...process.env, PROXY_URL: `http://127.0.0.1:${PROXY_PORT}` },
   });
   setTimeout(() => {
     console.log(`\n${C.bold}✓ Dashboard ready → open http://localhost:${CLIENT_PORT}${C.reset}\n`);

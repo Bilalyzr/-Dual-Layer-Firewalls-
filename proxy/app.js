@@ -36,7 +36,6 @@ import { busMode } from "./middleware/eventBus.js";
 import { llmConfig } from "./llm/client.js";
 
 import chatRouter from "./routes/chat.js";
-import biometricRouter from "./routes/biometric.js";
 import fingerprintRouter from "./routes/fingerprint.js";
 import slaRouter from "./routes/sla.js";
 import behaviorRouter from "./routes/behavior.js";
@@ -45,7 +44,6 @@ import eventsRouter from "./routes/events.js";
 import alertsRouter from "./routes/alerts.js";
 import metricsRouter from "./routes/metrics.js";
 import inspectRouter from "./routes/inspect.js";
-import shapRouter from "./routes/shap.js";
 import sessionRouter from "./routes/session.js";
 import authRouter from "./routes/auth.js";
 import internalAgentRouter from "./routes/internalAgent.js";
@@ -53,16 +51,14 @@ import responseRouter from "./routes/response.js";
 import intelRouter from "./routes/intel.js";
 import consentRouter from "./routes/consent.js";
 
-const ROLES = new Set(["all", "gateway", "firewall", "agent", "biometric"]);
+const ROLES = new Set(["all", "gateway", "firewall", "agent"]);
 
 const firewallSvc = () => process.env.FIREWALL_SVC_URL || "http://firewall-svc:4000";
-const biometricSvc = () => process.env.BIOMETRIC_SVC_URL || "http://biometric-svc:4000";
 
 function mountMonolith(app) {
   app.use("/api/session", sessionRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/chat", chatRouter);
-  app.use("/api/biometric", biometricRouter);
   app.use("/api/biometric/fingerprint", fingerprintRouter);
   app.use("/api/sla", slaRouter);
   app.use("/api/behavior", behaviorRouter);
@@ -71,7 +67,6 @@ function mountMonolith(app) {
   app.use("/api/alerts", alertsRouter);
   app.use("/api/metrics", metricsRouter);
   app.use("/api/inspect", inspectRouter);
-  app.use("/api/shap", shapRouter);
   app.use("/api/response", responseRouter);
   app.use("/api/intel", intelRouter);
   app.use("/api/consent", consentRouter);
@@ -90,12 +85,10 @@ function mountGateway(app) {
   app.use("/api/response", responseRouter); // ops surface lives on the edge
   app.use("/api/intel", intelRouter); // threat-intel read model + STIX/TAXII export
   app.use("/api/consent", consentRouter); // consent is identity-adjacent — lives on the edge
-  // Forwards compute-heavy paths to their owning services. The `/api/biometric`
-  // prefix also covers the fingerprint sub-route (Epic E/G).
+  app.use("/api/biometric/fingerprint", fingerprintRouter);
+  // Forwards compute-heavy paths to their owning services.
   app.use("/api/chat", proxyTo(firewallSvc()));
   app.use("/api/inspect", proxyTo(firewallSvc()));
-  app.use("/api/biometric", proxyTo(biometricSvc()));
-  app.use("/api/shap", proxyTo(biometricSvc()));
 }
 
 export function createApp({ role = "all" } = {}) {
@@ -144,10 +137,6 @@ export function createApp({ role = "all" } = {}) {
     app.use("/api/inspect", inspectRouter);
   } else if (role === "agent") {
     app.use("/internal/agent", internalAgentRouter);
-  } else if (role === "biometric") {
-    app.use("/api/biometric", biometricRouter);
-    app.use("/api/biometric/fingerprint", fingerprintRouter);
-    app.use("/api/shap", shapRouter);
   }
 
   app.get("/", (_req, res) => {

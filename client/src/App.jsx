@@ -7,7 +7,8 @@
  * (files preserved on disk for tests + future Phase 4 optional signals).
  */
 import { useEffect, useState } from "react";
-import { ensureSession } from "./lib/api";
+import { ensureSession, setSessionToken, clearSessionToken } from "./lib/api";
+import { useThreatStream } from "./hooks/useThreatStream";
 import { collectFingerprint, sendFingerprint } from "./lib/fingerprint";
 import { hasConsent, loadConsent } from "./lib/consent";
 import { resolvePublicIp } from "./lib/publicIp";
@@ -18,6 +19,7 @@ import ChatPanel from "./components/ChatPanel.jsx";
 import ThreatFeed from "./components/ThreatFeed.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import BehavioralRiskDashboard from "./components/BehavioralRiskDashboard.jsx";
+import ModuleAnalysisPanel from "./components/ModuleScoreBreakdown.jsx";
 import RiskSummary from "./components/RiskSummary.jsx";
 import RiskTable from "./components/RiskTable.jsx";
 
@@ -30,9 +32,13 @@ export default function App() {
   const [userId, setUserId] = useState(() => localStorage.getItem("dlf.userId") || "");
   // RiskTable row -> ThreatFeed drill-down (per-user threat filter).
   const [focusUser, setFocusUser] = useState(null);
+  // Latest 6-module per-prompt score breakdown from ChatPanel
+  const [latestModuleScores, setLatestModuleScores] = useState(null);
 
   // ALL hooks must be called BEFORE any early return (React rules of hooks).
   const [booting, setBooting] = useState(true);
+  const { moduleAnalyses } = useThreatStream(30);
+  const liveLatestScores = moduleAnalyses[0] || latestModuleScores || null;
 
   useEffect(() => {
     if (!authUser) return;
@@ -41,7 +47,7 @@ export default function App() {
     // Wake the API the moment the dashboard opens (Render free tier idles
     // the proxy after ~15 quiet minutes) so the user's FIRST click isn't
     // the one paying the cold start. Fire-and-forget.
-    fetch("/api/metrics", { signal: AbortSignal.timeout(60_000) }).catch(() => {});
+    fetch("/api/alerts/status", { signal: AbortSignal.timeout(60_000) }).catch(() => {});
   }, [userId, authUser]);
 
   useEffect(() => {
@@ -62,12 +68,16 @@ export default function App() {
   const handleLogin = (data) => {
     localStorage.setItem("dlf.authUser", JSON.stringify(data.user));
     localStorage.setItem("dlf.userId", data.user.username);
+    if (data.token) {
+      setSessionToken(data.token, data.sessionId, data.user.username);
+    }
     setAuthUser(data.user);
     setUserId(data.user.username);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("dlf.authUser");
+    clearSessionToken();
     setAuthUser(null);
   };
 
@@ -104,9 +114,17 @@ export default function App() {
           <RiskSummary />
         </div>
 
-        {/* Row 2 — interaction column (left) · flagship analysis column (right) */}
+        {/* Row 2 — 6-Module Per-Prompt Security Score Inspector (full width) */}
+        <div className="row-full">
+          <ModuleAnalysisPanel latestFromChat={liveLatestScores} />
+        </div>
+
+        {/* Row 3 — interaction column (left) · flagship analysis column (right) */}
         <div className="col col-left">
-          <ChatPanel userId={userId} />
+          <ChatPanel
+            userId={userId}
+            onModuleAnalysis={setLatestModuleScores}
+          />
           <ThreatFeed focusUser={focusUser} onClearFocus={() => setFocusUser(null)} />
           <RiskTable onFocusUser={setFocusUser} />
         </div>
