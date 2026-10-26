@@ -13,6 +13,8 @@ import os
 import time
 from typing import Any
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -20,9 +22,13 @@ from pydantic import BaseModel, Field
 from .classifier.model import get_classifier
 
 app = FastAPI(title="Orthrus — Processing Engine", version="1.0.0")
+# CORS allow-list: the engine answers server-to-server calls (proxy → engine)
+# which need no CORS at all; browser origins are limited to the local dev
+# surfaces. ENGINE_CORS_ORIGINS (comma-separated, or "*") overrides.
+_cors = os.getenv("ENGINE_CORS_ORIGINS") or "http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://localhost:4000"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )

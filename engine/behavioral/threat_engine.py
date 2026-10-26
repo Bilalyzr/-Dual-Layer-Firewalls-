@@ -27,10 +27,13 @@ def _dnn_enabled() -> bool:
     return os.getenv("BEHAVIORAL_THREAT_MODEL", "rf").lower() == "dnn"
 
 # Risk thresholds (PRD §23 — proposed policy values, not from papers).
+# CRITICAL (score >= 85) hard-denies: a genuinely hostile context (confirmed
+# injection + hostile telemetry) must be able to reach DENY, not just RESTRICT.
 RISK_THRESHOLDS = {
     "low": (0, 30, "ALLOW"),
     "medium": (31, 70, "STEP_UP"),
-    "high": (71, 100, "RESTRICT"),
+    "high": (71, 84, "RESTRICT"),
+    "critical": (85, 100, "DENY"),
 }
 
 _rf = None
@@ -98,7 +101,9 @@ def _score_to_level(score: float) -> str:
         return "LOW"
     if score <= 70:
         return "MEDIUM"
-    return "HIGH"
+    if score < 85:
+        return "HIGH"
+    return "CRITICAL"
 
 
 def _level_to_action(level: str) -> str:

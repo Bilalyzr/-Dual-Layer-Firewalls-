@@ -6,9 +6,15 @@
  */
 import { Router } from "express";
 import { publish } from "../middleware/eventBus.js";
+import { requireSessionMiddleware } from "../auth/session.js";
 
 const router = Router();
 const ENGINE_URL = process.env.ENGINE_URL || "http://127.0.0.1:8011";
+
+// Every /api/behavior surface exposes user-scoped security data (events
+// include prompt snippets) or mutates user state (/recalculate resets
+// counters and shifts baselines) — none of it may be anonymous.
+router.use(requireSessionMiddleware);
 
 router.post("/analyze", async (req, res) => {
   try {

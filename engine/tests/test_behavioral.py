@@ -32,6 +32,7 @@ def test_feature_extraction_dimensions():
 
 def test_feature_extraction_values():
     t = Telemetry(user_id="U1", device_change=True, location_change=True, working_hours=False,
+                  hour=2, day_of_week=6,
                   resource_sensitivity="critical", request_frequency=100)
     feats = extract_features(t)
     # device_change should produce a non-zero feature

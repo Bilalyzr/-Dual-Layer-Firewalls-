@@ -1,7 +1,8 @@
 # Local host-port override: 5432/5434 are taken by other services on this
 # machine (native Windows postgres + other projects). Container-to-container
-# traffic still uses postgres:5432 internally.
+# traffic still uses postgres:5432 internally. Loopback-bound so the
+# unauthenticated-by-default dev stores are not exposed to the LAN.
 services:
   postgres:
     ports: !override
-      - "5436:5432"
+      - "127.0.0.1:5436:5432"

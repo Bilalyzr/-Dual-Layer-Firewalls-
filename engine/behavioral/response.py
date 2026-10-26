@@ -32,18 +32,50 @@ class BehavioralDecision:
         return {k: v for k, v in asdict(self).items()}
 
 
-# Failed-auth escalation state per user: {userId: fail_count}
+# Failed-auth escalation state per user: {userId: fail_count}.
+# Persisted to disk so counts survive restarts (in-memory reset per reboot
+# let an attacker just wait for the process to recycle).
+import json
+import os
+from pathlib import Path
+
+_FAILCOUNT_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "behavioral_failcounts.json"
 _fail_counts: dict[str, int] = {}
+
+
+def _load_failcounts() -> None:
+    try:
+        if _FAILCOUNT_PATH.exists():
+            raw = json.loads(_FAILCOUNT_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                _fail_counts.update({k: int(v) for k, v in raw.items() if isinstance(v, (int, float))})
+    except Exception:
+        pass  # corrupt/unreadable file → start empty; never block the auth path
+
+
+def _save_failcounts() -> None:
+    try:
+        _FAILCOUNT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _FAILCOUNT_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_fail_counts), encoding="utf-8")
+        os.replace(tmp, _FAILCOUNT_PATH)
+    except Exception:
+        pass  # persistence is best-effort; analysis must never fail on it
+
+
+_load_failcounts()
 
 
 def escalate_failures(user_id: str) -> int:
     """Increment and return the failed-auth count for a user."""
     _fail_counts[user_id] = _fail_counts.get(user_id, 0) + 1
+    _save_failcounts()
     return _fail_counts[user_id]
 
 
 def reset_failures(user_id: str):
     _fail_counts.pop(user_id, None)
+    _save_failcounts()
 
 
 def get_failure_count(user_id: str) -> int:
@@ -70,8 +102,8 @@ def build_decision(
         if reasons:
             reasons.append(f"escalated due to {fails} prior failed authentications")
 
-    auth_map = {"LOW": "NORMAL", "MEDIUM": "STEP_UP", "HIGH": "STRONG_MFA"}
-    decision_map = {"ALLOW": "ALLOW", "STEP_UP": "STEP_UP", "RESTRICT": "RESTRICT"}
+    auth_map = {"LOW": "NORMAL", "MEDIUM": "STEP_UP", "HIGH": "STRONG_MFA", "CRITICAL": "BLOCK"}
+    decision_map = {"ALLOW": "ALLOW", "STEP_UP": "STEP_UP", "RESTRICT": "RESTRICT", "DENY": "DENY"}
 
     return BehavioralDecision(
         user_id=telemetry.user_id,

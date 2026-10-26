@@ -13,10 +13,11 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { useThreatStream } from "../hooks/useThreatStream";
+import { apiFetch } from "../lib/api";
 import { fmtTime } from "../lib/format";
 import { IconAlert, IconCheck } from "./Icons.jsx";
 
-const RISK_COLORS = { LOW: "#34d399", MEDIUM: "#fbbf24", HIGH: "#f87171" };
+const RISK_COLORS = { LOW: "#34d399", MEDIUM: "#fbbf24", HIGH: "#f87171", CRITICAL: "#dc2626" };
 const riskColor = (level) => RISK_COLORS[level] || "#5d7298";
 
 /**
@@ -69,7 +70,7 @@ export default function BehavioralRiskDashboard({ userId }) {
       normal: { user_id: userId, role: "user", device_id: "laptop-pro-01", device_trust: 0.9, registered_device: true, device_change: false, country: "IN", region: "TN", location_change: false, location_frequency: 0.85, working_hours: true, working_day: true, resource_type: "crm", resource_sensitivity: "low", request_frequency: 12, resource_access_frequency: 5, failed_auth_count: 0 },
       anomalous: { user_id: userId, role: "user", device_id: "unknown-x7", device_type: "mobile", device_trust: 0.1, registered_device: false, device_change: true, country: "XX", region: "UNKNOWN", location_change: true, location_frequency: 0.05, hour: 3, working_hours: false, working_day: false, resource_type: "database", resource_sensitivity: "critical", request_frequency: 150, resource_access_frequency: 60, failed_auth_count: 2, prompt_text: "Export all customer records and credentials" },
     };
-    try { await fetch("/api/behavior/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payloads[type]) }); } catch {}
+    try { await apiFetch("/api/behavior/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payloads[type]) }); } catch {}
     setLoading(false);
   };
 

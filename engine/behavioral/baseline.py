@@ -42,7 +42,11 @@ class BehavioralBaseline:
     def update(self, telemetry) -> "BehavioralBaseline":
         """EWMA update from confirmed-genuine activity (α=0.05 — conservative)."""
         alpha = 0.05
+        # Track the spread too (EWMA of |deviation|): frequency_deviation()'s
+        # z-score was frozen at the initial std=8 guess forever otherwise.
+        deviation = abs(telemetry.request_frequency - self.normal_frequency)
         self.normal_frequency = (1 - alpha) * self.normal_frequency + alpha * telemetry.request_frequency
+        self.normal_frequency_std = max(0.5, (1 - alpha) * self.normal_frequency_std + alpha * deviation)
         if not self.normal_device_id:
             self.normal_device_id = telemetry.device_id
         elif telemetry.device_id and telemetry.device_id != self.normal_device_id:
@@ -71,8 +75,56 @@ class BehavioralBaseline:
         }
 
 
-# Per-user in-process baselines (would persist to Mongo in production).
+# Per-user baselines. Persisted to a JSON file under data/ so profiles
+# survive restarts (a reboot resetting every user's learned "normal" made
+# the adaptive layer meaningless across sessions).
+import json
+import os
+from pathlib import Path
+
+_BASELINE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "behavioral_baselines.json"
 _baselines: dict[str, BehavioralBaseline] = {}
+
+
+def _serialize(b: BehavioralBaseline) -> dict:
+    d = b.to_dict()
+    d["normal_days"] = sorted(b.normal_days)
+    d["normal_resources"] = sorted(b.normal_resources)
+    d["normal_frequency_std"] = b.normal_frequency_std
+    return d
+
+
+def _save_baselines() -> None:
+    try:
+        _BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _BASELINE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({uid: _serialize(b) for uid, b in _baselines.items()}), encoding="utf-8")
+        os.replace(tmp, _BASELINE_PATH)
+    except Exception:
+        pass  # best-effort persistence; never break the analysis path
+
+
+def _load_baselines() -> None:
+    try:
+        if not _BASELINE_PATH.exists():
+            return
+        raw = json.loads(_BASELINE_PATH.read_text(encoding="utf-8"))
+        for uid, d in (raw or {}).items():
+            b = BehavioralBaseline(user_id=uid, role=d.get("role", "user"))
+            b.normal_hours = tuple(d.get("normal_hours", (9, 18)))
+            b.normal_days = set(d.get("normal_days", [0, 1, 2, 3, 4]))
+            b.normal_device_id = d.get("normal_device_id", "")
+            b.normal_location = d.get("normal_location", "")
+            b.normal_resources = set(d.get("normal_resources", []))
+            b.normal_frequency = float(d.get("normal_frequency", 15.0))
+            b.normal_frequency_std = max(0.5, float(d.get("normal_frequency_std", 8.0)))
+            b.n_updates = int(d.get("n_updates", 0))
+            _baselines[uid] = b
+    except Exception:
+        pass  # corrupt file → fresh baselines
+
+
+_load_baselines()
 
 
 def get_baseline(user_id: str, role: str = "user") -> BehavioralBaseline:
@@ -84,4 +136,5 @@ def get_baseline(user_id: str, role: str = "user") -> BehavioralBaseline:
 def update_baseline(user_id: str, telemetry) -> dict:
     b = get_baseline(user_id, getattr(telemetry, "role", "user"))
     b.update(telemetry)
+    _save_baselines()
     return b.to_dict()

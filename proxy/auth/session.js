@@ -185,3 +185,15 @@ export async function sessionMiddleware(req, _res, next) {
   }
   next();
 }
+
+/**
+ * Express middleware: REJECT requests without a valid session token (401).
+ * Use on surfaces that expose user-scoped security data or state-changing
+ * operations (e.g. /api/behavior/*) — they must not be world-readable.
+ */
+export function requireSessionMiddleware(req, res, next) {
+  if (!req.session) {
+    return res.status(401).json({ error: "no_session", reason: "login required (Authorization: Bearer <token>)" });
+  }
+  next();
+}

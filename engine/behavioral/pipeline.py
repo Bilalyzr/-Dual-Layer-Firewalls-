@@ -58,8 +58,9 @@ def analyze(telemetry: Telemetry) -> dict:
     # Boost risk if LLM context flagged exfiltration/unusual
     if llm_ctx.get("context_score", 0) > 0.5:
         threat["risk_score"] = min(100, threat["risk_score"] + llm_ctx["context_score"] * 20)
-        from .threat_engine import _score_to_level
+        from .threat_engine import _score_to_level, _level_to_action
         threat["risk_level"] = _score_to_level(threat["risk_score"])
+        threat["action"] = _level_to_action(threat["risk_level"])
 
     # Layer-1 bridge: a confirmed prompt injection is itself a hostile
     # behavioral signal — boost the risk and let §35 explain it. Floor at

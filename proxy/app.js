@@ -110,9 +110,12 @@ export function createApp({ role = "all" } = {}) {
     next();
   });
 
-  // CORS: allow-list via CORS_ORIGINS (comma-separated). Default "*" keeps
-  // local/tooling behavior; deployments set the real browser origins.
-  const corsOrigins = (process.env.CORS_ORIGINS || "*")
+  // CORS: allow-list via CORS_ORIGINS (comma-separated). Default pins the
+  // local dev origins (Vite dashboard + compose client) instead of "*";
+  // deployments set the real browser origins (render.yaml pins the vercel
+  // domain). Set CORS_ORIGINS=* explicitly to restore the old open default.
+  const corsOrigins = (process.env.CORS_ORIGINS ||
+    "http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://localhost:4000")
     .split(",").map((s) => s.trim()).filter(Boolean);
   app.use(cors({
     exposedHeaders: ["x-session-token", "x-request-id"],

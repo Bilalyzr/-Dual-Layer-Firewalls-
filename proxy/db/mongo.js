@@ -40,6 +40,7 @@ const mem = {
   samples: [],
   baselines: new Map(),
   behavior_baselines: new Map(), // `${channel}:${userId}` -> mouse/touch baseline (Epic G)
+  login_state: new Map(),    // userId -> { failedLogins, lastFailedAt } (auth hardening)
   biometric_events: [],
   sessions: new Map(),      // sessionId -> session doc
   credentials: [],          // WebAuthn credential docs
@@ -66,6 +67,7 @@ export async function connect() {
       db.collection("samples").createIndex({ ts: -1 }),
       db.collection("baselines").createIndex({ userId: 1 }, { unique: true }),
       db.collection("behavior_baselines").createIndex({ userId: 1, channel: 1 }, { unique: true }),
+      db.collection("login_state").createIndex({ userId: 1 }, { unique: true }),
       db.collection("biometric_events").createIndex({ ts: -1 }),
       db.collection("sessions").createIndex({ sessionId: 1 }, { unique: true }),
       db.collection("credentials").createIndex({ credentialID: 1 }, { unique: true }),
@@ -326,4 +328,44 @@ export async function stats() {
     s.credentials = mem.credentials.length;
   }
   return s;
+}
+
+// ---- Login state: server-tracked failed-login counters (auth hardening) -- //
+// The counter MUST live server-side: accepting `failed_auth_count` from the
+// request body let an attacker with a stolen password claim a pristine
+// history. Persisted so counts survive restarts and are shared across
+// replicas; in-memory fallback keeps single-node dev working.
+export async function getLoginState(userId) {
+  const row = connected
+    ? await db.collection("login_state").findOne({ userId })
+    : mem.login_state.get(userId) || null;
+  return row || { userId, failedLogins: 0 };
+}
+
+export async function bumpFailedLogins(userId) {
+  if (connected) {
+    await db.collection("login_state").updateOne(
+      { userId },
+      { $inc: { failedLogins: 1 }, $set: { lastFailedAt: new Date() } },
+      { upsert: true }
+    );
+    return (await getLoginState(userId)).failedLogins;
+  }
+  const prev = mem.login_state.get(userId) || { userId, failedLogins: 0 };
+  const next = { ...prev, failedLogins: prev.failedLogins + 1, lastFailedAt: new Date() };
+  mem.login_state.set(userId, next);
+  return next.failedLogins;
+}
+
+export async function resetFailedLogins(userId) {
+  if (connected) {
+    await db.collection("login_state").updateOne(
+      { userId },
+      { $set: { failedLogins: 0 } },
+      { upsert: true }
+    );
+    return;
+  }
+  const prev = mem.login_state.get(userId) || { userId, failedLogins: 0 };
+  mem.login_state.set(userId, { ...prev, failedLogins: 0 });
 }

@@ -6,6 +6,7 @@
  * HTTP/1.1 socket limit.
  */
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 const MAX_STORE = 100;
 
@@ -47,7 +48,7 @@ function hydrateInitial() {
     })
     .catch(() => {});
 
-  fetch("/api/behavior/events?limit=30")
+  apiFetch("/api/behavior/events?limit=30")
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
       const list = Array.isArray(d?.events) ? d.events : Array.isArray(d) ? d : null;

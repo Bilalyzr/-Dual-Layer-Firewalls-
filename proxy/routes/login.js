@@ -1,21 +1,25 @@
 /**
  * /api/auth/login — Login system with behavioral risk analysis.
  *
- * Validates credentials against a mock user store, then runs the FULL
- * behavioral risk pipeline on the login attempt:
- *   - Captures device, location, time, identity context
- *   - Sends to the engine's /behavior/analyze endpoint
- *   - Returns the risk level + decision (ALLOW / STEP-UP / RESTRICT)
+ * Validates credentials, then runs the FULL behavioral risk pipeline on the
+ * login attempt and ENFORCES the verdict:
+ *   - CRITICAL / HIGH (score >= 80) → login refused (403)
+ *   - MEDIUM (or engine unavailable) → session issued but FROZEN behind
+ *     WebAuthn step-up (requireStepUp) until an assertion clears it
+ *   - LOW → normal login + session issued
  *
- * If behavioral risk is HIGH → login is restricted (even with correct password).
- * If MEDIUM → step-up MFA required.
- * If LOW → normal login + session issued.
+ * Trust boundary hardening: every risk-relevant telemetry field is derived
+ * SERVER-SIDE (clock, tracked failed-login count) or pinned to a neutral
+ * constant. The request body can no longer lower its own risk score —
+ * `failed_auth_count`, `device_trust`, `location_change`, `working_hours`…
+ * from the body are ignored.
  */
 import crypto from "crypto";
 import { Router } from "express";
 import { publish } from "../middleware/eventBus.js";
 import { appendAudit } from "../compliance/auditChain.js";
-import { createSession } from "../auth/session.js";
+import { createSession, requireStepUp } from "../auth/session.js";
+import { bumpFailedLogins, getLoginState, resetFailedLogins } from "../db/mongo.js";
 
 const router = Router();
 const ENGINE_URL = process.env.ENGINE_URL || "http://127.0.0.1:8011";
@@ -27,12 +31,19 @@ function safePasswordMatch(expected, provided) {
   return crypto.timingSafeEqual(a, b);
 }
 
-// Mock user store (demo). In production this would be a real IAM / DB lookup.
+// User store (demo). Passwords come from the environment when set; the
+// built-in demo passwords only apply when the *_PASSWORD vars are absent.
 const USERS = {
-  admin: { password: "admin123", role: "admin", privilege_level: 0.9, normal_hours: [9, 18] },
-  analyst: { password: "sec123", role: "user", privilege_level: 0.4, normal_hours: [9, 18] },
-  demo: { password: "demo", role: "user", privilege_level: 0.2, normal_hours: [9, 18] },
+  admin: { password: process.env.ADMIN_PASSWORD || "admin123", role: "admin", privilege_level: 0.9, normal_hours: [9, 18] },
+  analyst: { password: process.env.ANALYST_PASSWORD || "sec123", role: "user", privilege_level: 0.4, normal_hours: [9, 18] },
+  demo: { password: process.env.DEMO_PASSWORD || "demo", role: "user", privilege_level: 0.2, normal_hours: [9, 18] },
 };
+if (!process.env.ADMIN_PASSWORD || !process.env.ANALYST_PASSWORD || !process.env.DEMO_PASSWORD) {
+  console.warn(
+    "[login] DEMO credentials active — set ADMIN_PASSWORD / ANALYST_PASSWORD / DEMO_PASSWORD " +
+    "before any deployment beyond the local demo."
+  );
+}
 
 // Per-user session state (in-process; integrates with the existing session system in production).
 const _sessions = new Map();
@@ -45,8 +56,12 @@ router.post("/login", async (req, res) => {
   const user = USERS[username?.toLowerCase()];
   const passwordValid = Boolean(user && safePasswordMatch(user.password, password));
 
+  // Server-tracked failure count: bumped on every bad password, reset on
+  // success. Never read from the request body.
+  let failedAuthCount = 0;
   if (!passwordValid) {
-    appendAudit("login_failed", { username, ip: clientIp, ts: new Date() });
+    failedAuthCount = await bumpFailedLogins(username?.toLowerCase() || "unknown");
+    appendAudit("login_failed", { username, ip: clientIp, failedAuthCount, ts: new Date() });
     publish("behavior", {
       user_id: username || "unknown",
       decision: "DENY",
@@ -62,41 +77,44 @@ router.post("/login", async (req, res) => {
     });
   }
 
-  // 2. Build behavioral telemetry from the login context
+  // 2. Build behavioral telemetry from SERVER-DERIVED context only.
+  //    Risk-relevant fields the client used to control are pinned: without a
+  //    device registry / geoip the server cannot verify them, so they take
+  //    neutral constants — the body can only supply harmless labels.
   const now = new Date();
   const hour = now.getHours();
   const day = now.getDay();
-  const isWorkingHours = hour >= user.normal_hours[0] && hour < user.normal_hours[1];
-  const isWorkingDay = day >= 1 && day <= 5;
-
+  const failedState = await getLoginState(username.toLowerCase());
   const telemetry = {
     user_id: username,
     role: user.role,
-    device_id: req.body.device_id || "browser",
-    device_type: req.body.device_type || "laptop",
-    device_trust: req.body.device_trust ?? 0.8,
-    registered_device: req.body.registered_device ?? true,
-    device_change: req.body.device_change ?? false,
-    country: req.body.country || req.ipContext?.geoip?.country || "IN",
-    region: req.body.region || req.ipContext?.geoip?.region || "TN",
-    location_change: req.body.location_change ?? false,
-    location_frequency: req.body.location_frequency ?? 0.8,
-    hour,
-    working_hours: req.body.working_hours ?? isWorkingHours,
-    working_day: req.body.working_day ?? isWorkingDay,
-    time_since_prev_request: req.body.time_since_prev_request ?? 3600,
+    device_id: req.body.device_id || "browser",      // label only
+    device_type: req.body.device_type || "laptop",   // label only
+    device_trust: 0.5,                               // unknown — server constant
+    registered_device: true,                         // unverified — neutral constant
+    device_change: false,                            // server constant (no registry yet)
+    country: req.ipContext?.geoip?.country || "IN",  // server geoip when present
+    region: req.ipContext?.geoip?.region || "TN",
+    location_change: false,                          // server constant (no history yet)
+    location_frequency: 0.8,                         // neutral constant
+    hour,                                            // server clock — always
+    working_hours: hour >= user.normal_hours[0] && hour < user.normal_hours[1],
+    working_day: day >= 1 && day <= 5,               // server calendar — always
+    time_since_prev_request: 3600,                   // server constant
     session_id: `login-${Date.now()}`,
     session_duration: 0,
     request_count: 1,
-    failed_auth_count: req.body.failed_auth_count ?? 0,
+    failed_auth_count: failedState.failedLogins || 0, // server-tracked
     resource_type: "auth",
     resource_sensitivity: "high",
     request_frequency: 1,
     resource_access_frequency: 1,
   };
 
-  // 3. Run behavioral risk analysis on this login attempt
-  let behavioral = { risk_level: "LOW", risk_score: 0, decision: "ALLOW" };
+  // 3. Run behavioral risk analysis on this login attempt. Engine failure or
+  //    a non-JSON reply degrades to a STEP_UP-gated login — never a silent
+  //    LOW/ALLOW (fail-open let an attacker just DDoS the engine instead).
+  let behavioral = { risk_level: "MEDIUM", risk_score: 50, decision: "STEP_UP", degraded: true };
   try {
     const r = await fetch(`${ENGINE_URL}/behavior/analyze`, {
       method: "POST",
@@ -104,20 +122,21 @@ router.post("/login", async (req, res) => {
       body: JSON.stringify(telemetry),
       signal: AbortSignal.timeout(10000),
     });
-    behavioral = await r.json();
+    if (!r.ok) throw new Error(`engine HTTP ${r.status}`);
+    const parsed = await r.json();
+    if (!parsed || typeof parsed.risk_level !== "string") throw new Error("engine returned non-JSON body");
+    behavioral = parsed;
   } catch (err) {
-    // Engine unavailable — allow login with LOW risk (fail-open for demo)
-    behavioral.reasons = ["behavioral engine unavailable — fail-open"];
+    behavioral.reasons = [`behavioral engine unavailable (${err.message}) — login gated behind step-up`];
   }
 
   // 4. Decision: combine credential validity + behavioral risk
   publish("behavior", { ...behavioral, event_type: "login", user_id: username, ts: new Date() });
 
-  // Hard-deny only CRITICAL risk (>= 80): a genuinely hostile context
+  // Hard-deny CRITICAL, and HIGH at score >= 80: a genuinely hostile context
   // (new device + new location + off hours + failed auths) still blocks.
-  // Plain off-hours admin logins (~70s) now step up with a warning instead
-  // of locking the operator out of their own console in the evening.
-  if (behavioral.risk_level === "HIGH" && (behavioral.risk_score ?? 100) >= 80) {
+  const hardDeny = ["HIGH", "CRITICAL"].includes(behavioral.risk_level) && (behavioral.risk_score ?? 100) >= 80;
+  if (hardDeny) {
     appendAudit("login_blocked", { username, ip: clientIp, risk: behavioral.risk_score, reasons: behavioral.reasons, ts: new Date() });
     return res.status(403).json({
       success: false,
@@ -127,23 +146,25 @@ router.post("/login", async (req, res) => {
     });
   }
 
-  if (behavioral.risk_level === "MEDIUM") {
-    // For the demo: MEDIUM allows login but flags that step-up was recommended.
-    // In production, this would require an actual OTP/WebAuthn assertion.
-    appendAudit("login_stepup_recommended", { username, ip: clientIp, risk: behavioral.risk_score, ts: new Date() });
-    // Fall through to issue session — the behavioral panel will show the risk
-  }
-
-  // 5. LOW/MEDIUM risk → issue cryptographically signed session token
+  // 5. Issue session. MEDIUM (or degraded) risk → the session is created but
+  //    FROZEN behind WebAuthn step-up: /api/chat returns 401 until a verified
+  //    assertion clears it (see routes/auth.js verify endpoint).
+  const stepUpRequired = behavioral.risk_level === "MEDIUM" || behavioral.degraded === true;
   const signedSession = await createSession({ userId: username });
   const token = signedSession.token;
+  if (stepUpRequired) {
+    await requireStepUp(signedSession.sessionId, "login risk MEDIUM — WebAuthn step-up required");
+    appendAudit("login_stepup_required", { username, ip: clientIp, risk: behavioral.risk_score, degraded: Boolean(behavioral.degraded), ts: new Date() });
+  }
   _sessions.set(token, { username, role: user.role, loginTime: now, behavioral, sessionId: signedSession.sessionId });
-  appendAudit("login_success", { username, ip: clientIp, risk: behavioral.risk_score, ts: new Date() });
+  await resetFailedLogins(username.toLowerCase());
+  appendAudit("login_success", { username, ip: clientIp, risk: behavioral.risk_score, stepUpRequired, ts: new Date() });
 
   res.json({
     success: true,
     token,
     sessionId: signedSession.sessionId,
+    stepUpRequired,
     user: { username, role: user.role, privilege_level: user.privilege_level },
     behavioral,
   });

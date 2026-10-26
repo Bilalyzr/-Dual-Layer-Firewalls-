@@ -30,8 +30,8 @@ class Telemetry:
     location_frequency: float = 0.8     # 0..1 — how often we see this location
     # Time
     timestamp: str = ""                 # ISO; computed at collection time if empty
-    hour: int = 10
-    day_of_week: int = 1                # 0=Mon .. 6=Sun
+    hour: int | None = None             # None → filled from the collection clock
+    day_of_week: int | None = None      # None → filled from the collection clock (0=Mon)
     working_hours: bool = True
     working_day: bool = True
     time_since_prev_request: float = 300.0  # seconds
@@ -59,15 +59,16 @@ class Telemetry:
     word_scores: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        if not self.timestamp:
+        # Auto-fill time fields only when the caller omitted them (None) —
+        # an explicit value always wins, including a genuine midnight (hour=0).
+        if not self.timestamp or self.hour is None or self.day_of_week is None:
             now = datetime.now()
-            self.timestamp = now.isoformat()
-            # Only auto-compute time fields if they're at their default (0) —
-            # don't override values explicitly passed (e.g. hour=3 from API).
-            if self.hour == 0:
+            if not self.timestamp:
+                self.timestamp = now.isoformat()
+            if self.hour is None:
                 self.hour = now.hour
                 self.working_hours = 9 <= now.hour < 18
-            if self.day_of_week == 0:
+            if self.day_of_week is None:
                 self.day_of_week = now.weekday()
                 self.working_day = now.weekday() < 5
 
@@ -89,7 +90,12 @@ ROLE_PRIVILEGE_MAP = {
 
 
 def from_dict(d: dict) -> Telemetry:
-    """Build a Telemetry from a raw API request dict, filling defaults."""
+    """Build a Telemetry from a raw API request dict, filling defaults.
+
+    ``None`` values (pydantic optional fields the caller omitted) are dropped
+    so the dataclass defaults + collection-time fill apply instead of
+    overriding them with None.
+    """
     known = {f for f in Telemetry.__dataclass_fields__}
-    kwargs = {k: v for k, v in d.items() if k in known}
+    kwargs = {k: v for k, v in d.items() if k in known and v is not None}
     return Telemetry(**kwargs)
