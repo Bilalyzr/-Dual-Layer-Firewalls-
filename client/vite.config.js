@@ -9,6 +9,9 @@ export default defineConfig({
   server: {
     host: true,
     port,
+    // Allow any Host header so public tunnels (cloudflared/ngrok) aren't
+    // rejected with "Blocked request. This host is not allowed." Dev-only.
+    allowedHosts: true,
     proxy: {
       "/api": {
         target,
