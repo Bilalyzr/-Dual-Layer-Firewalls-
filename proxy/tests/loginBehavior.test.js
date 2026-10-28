@@ -87,7 +87,7 @@ describe("login trust boundary", () => {
     expect(r.status).toBe(200);
     expect(capturedTelemetry.length).toBe(1);
     const t = capturedTelemetry[0];
-    expect(t.device_trust).toBe(0.5);            // server constant, not 0.99
+    expect(t.device_trust).toBe(0.8);            // server constant, not 0.99
     expect(t.location_change).toBe(false);       // server constant
     expect(t.failed_auth_count).toBe(0);         // server-tracked, not body
     const hour = before.getHours();

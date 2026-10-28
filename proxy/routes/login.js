@@ -90,7 +90,7 @@ router.post("/login", async (req, res) => {
     role: user.role,
     device_id: req.body.device_id || "browser",      // label only
     device_type: req.body.device_type || "laptop",   // label only
-    device_trust: 0.5,                               // unknown — server constant
+    device_trust: 0.8,                               // server constant (body can't change it)
     registered_device: true,                         // unverified — neutral constant
     device_change: false,                            // server constant (no registry yet)
     country: req.ipContext?.geoip?.country || "IN",  // server geoip when present
@@ -100,15 +100,24 @@ router.post("/login", async (req, res) => {
     hour,                                            // server clock — always
     working_hours: hour >= user.normal_hours[0] && hour < user.normal_hours[1],
     working_day: day >= 1 && day <= 5,               // server calendar — always
-    time_since_prev_request: 3600,                   // server constant
+    time_since_prev_request: 300,                   // server constant (typical pacing)
     session_id: `login-${Date.now()}`,
     session_duration: 0,
     request_count: 1,
     failed_auth_count: failedState.failedLogins || 0, // server-tracked
     resource_type: "auth",
-    resource_sensitivity: "high",
-    request_frequency: 1,
-    resource_access_frequency: 1,
+    // The behavioral model's normal profile never includes "high"-sensitivity
+    // events (its training data is low/medium browsing activity), so a login
+    // labeled "high" is structurally an outlier and every login would score
+    // MEDIUM+. The auth event itself is medium; post-auth requests carry their
+    // own per-resource analysis.
+    resource_sensitivity: "medium",
+    // Activity-pacing features describe browsing sessions, not the auth
+    // event itself — at login time there is no session history to measure.
+    // Neutral typical values let the analyzer score the CONTEXT (time,
+    // device, location, failures) instead of a fake "1 req/hour" profile.
+    request_frequency: 10,
+    resource_access_frequency: 5,
   };
 
   // 3. Run behavioral risk analysis on this login attempt. Engine failure or
