@@ -55,6 +55,35 @@ const MODULE_META = [
   },
 ];
 
+// Provenance of a module-analysis record, mirrored from the proxy's
+// buildModuleScores `source` field. Lets SecOps tell a real 6-module engine
+// evaluation apart from the local fail-soft approximation at a glance.
+const SOURCE_META = {
+  live: {
+    label: "LIVE ENGINE",
+    cls: "pill-ok",
+    title:
+      "Scores computed by the v2 engine's trained 6-module pipeline (:8020/v1/inspect).",
+  },
+  degraded: {
+    label: "DEGRADED",
+    cls: "pill-warn",
+    title:
+      "Engine responded but its classifier fell back (hash/none/missing model) — AI Threat Detection score is approximate.",
+  },
+  synthesized: {
+    label: "SYNTHESIZED",
+    cls: "pill-warn",
+    title:
+      "v2 engine unreachable — scores derived from the proxy's local heuristic / ML / signature signals, not the deep 6-module evaluation.",
+  },
+};
+
+function sourceMeta(record) {
+  const src = record?.source || (record?.engine?.live ? "live" : "synthesized");
+  return SOURCE_META[src] || SOURCE_META.synthesized;
+}
+
 function scoreColor(score, isDecision = false, blocked = false) {
   if (isDecision && blocked) return "var(--red)";
   if (score >= 70) return "var(--red)";
@@ -160,6 +189,14 @@ export default function ModuleAnalysisPanel({ latestFromChat = null }) {
           Multi-Module Security Scores{" "}
           <small>Per-Prompt Evaluation Breakdown</small>
         </h2>
+        {active && (
+          <span
+            className={`pill ${sourceMeta(active).cls} mod-source-head`}
+            title={sourceMeta(active).title}
+          >
+            {sourceMeta(active).label}
+          </span>
+        )}
         <span className="muted small">{history.length} evaluated</span>
         <span
           className={`dot ${connected ? "dot-on" : "dot-off"}`}
@@ -209,9 +246,20 @@ export default function ModuleAnalysisPanel({ latestFromChat = null }) {
                 USER <b>{active.userId || "anon"}</b> ·{" "}
                 {active.ts ? fmtTime(new Date(active.ts)) : "just now"}
               </span>
-              <span className={`pill ${isBlocked ? "pill-bad" : "pill-ok"}`}>
-                {isBlocked ? `BLOCKED (${active.category || "LLM01"})` : "ALLOWED"} · COMPOSITE{" "}
-                {finalMod.score ?? 0}%
+              <span className="mod-source-cluster">
+                {(() => {
+                  const sm = sourceMeta(active);
+                  return (
+                    <span className={`pill ${sm.cls}`} title={sm.title}>
+                      {sm.label}
+                      {active.engine?.model ? ` · ${active.engine.model}` : ""}
+                    </span>
+                  );
+                })()}
+                <span className={`pill ${isBlocked ? "pill-bad" : "pill-ok"}`}>
+                  {isBlocked ? `BLOCKED (${active.category || "LLM01"})` : "ALLOWED"} · COMPOSITE{" "}
+                  {finalMod.score ?? 0}%
+                </span>
               </span>
             </div>
             <div className="mod-active-prompt-text mono">

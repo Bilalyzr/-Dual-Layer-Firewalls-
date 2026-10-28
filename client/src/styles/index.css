@@ -1668,6 +1668,16 @@ html { scroll-behavior: smooth; }
   gap: 10px;
   margin-bottom: 6px;
 }
+.mod-source-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.mod-source-head {
+  margin-left: auto;
+}
 .mod-active-prompt-text {
   font-size: 12px;
   color: var(--text);

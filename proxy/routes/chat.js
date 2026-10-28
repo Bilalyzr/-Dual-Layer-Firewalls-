@@ -110,6 +110,16 @@ async function buildModuleScores({
   }
 
   const m = v2?.modules || {};
+  // Provenance of the scores below, surfaced to the dashboard so SecOps can tell
+  // a real 6-module evaluation from the local fail-soft approximation:
+  //   live       — v2 engine (:8020) answered with a trained classifier
+  //   degraded   — v2 engine answered but its model fell back (hash/none/missing)
+  //   synthesized — engine unreachable; scores derived from proxy-local signals
+  const engineLive = v2 != null;
+  const engineModel = m.ai_threat_detection?.model ?? null;
+  const engineDegraded =
+    engineLive && (engineModel == null || engineModel === "fallback-hash" || engineModel === "none");
+  const source = !engineLive ? "synthesized" : engineDegraded ? "degraded" : "live";
   const heurMatched = Boolean(heuristic?.matched);
   const heurSignals = (heuristic?.signals || []).map((s) => `${s.category}:${s.label}`);
   const v2Removed = m.prompt_sanitization?.removed || [];
@@ -163,6 +173,8 @@ async function buildModuleScores({
     ts: new Date().toISOString(),
     blocked: Boolean(blocked),
     category: category || (blocked ? "LLM01" : "SAFE"),
+    source,
+    engine: { live: engineLive, degraded: engineDegraded, model: engineModel },
     promptSanitization: {
       label: "Prompt Sanitization",
       score: sanitizeScore,
@@ -406,6 +418,8 @@ router.post("/", async (req, res) => {
       ts: new Date().toISOString(),
       blocked: true,
       category,
+      source: "synthesized",
+      engine: { live: false, degraded: false, model: "length_guard" },
       promptSanitization: {
         label: "Prompt Sanitization",
         score: 100,
