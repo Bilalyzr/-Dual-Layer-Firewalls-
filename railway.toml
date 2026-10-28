@@ -1,0 +1,19 @@
+# Railway config — dlf-engine service
+# In Railway dashboard: set this service's Root Directory to "." (repo root).
+# The Dockerfile copies ./models from the root, so it MUST build from root.
+#
+# Service name in Railway: dlf-engine
+
+[build]
+builder        = "dockerfile"
+dockerfilePath = "engine/Dockerfile"
+
+[deploy]
+healthcheckPath    = "/health"
+healthcheckTimeout = 300
+restartPolicyType  = "on_failure"
+restartPolicyMaxRetries = 10
+
+[variables]
+BIOMETRIC_MIN_SAMPLES = "120"
+BIOMETRIC_Z_THRESHOLD = "2.5"

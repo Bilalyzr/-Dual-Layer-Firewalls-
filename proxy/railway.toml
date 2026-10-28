@@ -1,0 +1,55 @@
+# Railway config — dlf-proxy service
+# In Railway dashboard: set this service's Root Directory to "proxy/".
+#
+# Service name in Railway: dlf-proxy
+
+[build]
+builder        = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath    = "/api/alerts/status"
+healthcheckTimeout = 300
+restartPolicyType  = "on_failure"
+restartPolicyMaxRetries = 10
+
+# ---------------------------------------------------------------------------
+# Non-secret environment variables (safe to commit).
+# Set the variables marked SECRET below in the Railway dashboard → Variables.
+# ---------------------------------------------------------------------------
+[variables]
+# LLM — Gemini via its OpenAI-compatible endpoint (free key from aistudio.google.com)
+LLM_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM_MODEL      = "gemini-flash-lite-latest"
+LLM_TIMEOUT_MS = "15000"
+
+# Engine URL — Railway private networking (resolves once both services are deployed).
+# Uses Railway's variable reference so PORT is always correct even if Railway
+# assigns a different value at boot.
+ENGINE_URL = "http://dlf-engine.railway.internal:${{dlf-engine.PORT}}"
+
+# Firewall
+FIREWALL_MODE      = "enforce"
+FIREWALL_THRESHOLD = "0.58"
+STRICT_REAL        = "false"
+BIOMETRIC_MODE     = "shadow"
+
+# CORS — Vercel frontend + local dev
+CORS_ORIGINS = "https://dual-layer-firewalls.vercel.app,http://localhost:5174"
+
+# Edge / forensics
+TRUST_VERCEL_EDGE  = "true"
+ENGINE_KEEPALIVE_MS = "600000"
+
+# ---------------------------------------------------------------------------
+# SECRET variables — set these in Railway dashboard → Variables (never commit):
+#
+#   MONGO_URI          MongoDB Atlas connection string
+#   LLM_API_KEY        Gemini API key (aistudio.google.com)
+#   SESSION_SECRET     Any long random string (openssl rand -hex 32)
+#
+# Optional LLM fallback (recommended — free Groq key at console.groq.com):
+#   LLM_FALLBACK_URL       https://api.groq.com/openai/v1
+#   LLM_FALLBACK_MODEL     llama-3.1-8b-instant
+#   LLM_FALLBACK_API_KEY   gsk_...
+# ---------------------------------------------------------------------------
