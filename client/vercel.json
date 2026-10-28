@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://dlf-proxy.onrender.com/api/:path*"
+      "destination": "https://yield-absolutely-lady-raw.trycloudflare.com/api/:path*"
     }
   ]
 }
