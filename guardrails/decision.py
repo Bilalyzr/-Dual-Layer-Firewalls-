@@ -41,46 +41,46 @@ def evaluate(sanitized: SanitizeResult, intent: IntentResult,
 
     # L2 — single-turn semantic kill-shot (PDF §3.3: instant termination).
     if intent.intent_score >= block_threshold():
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "intent")
+        return Decision(True, f"intent score {intent.intent_score:.2f} exceeded block threshold", round(risk, 4), "intent")
 
     # Defense-in-depth (trial requirement: ANY user-crafted attack blocks):
     # a single overwhelming signal OR corroborated signals are enough —
     # novel phrasings that dodge the classifier alone still get caught.
     sanitizer_hit = any(r.startswith("jailbreak") for r in sanitized.removed)
     if injection_weightage >= 0.95:  # saturated attack vocabulary (e.g. 0.98)
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sentiment")
+        return Decision(True, f"injection vocabulary saturation ({injection_weightage:.2f})", round(risk, 4), "sentiment")
     if injection_weightage >= 0.5 and intent.intent_score >= 0.5:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sentiment+intent")
+        return Decision(True, f"corroborated: vocabulary weightage {injection_weightage:.2f} + intent {intent.intent_score:.2f}", round(risk, 4), "sentiment+intent")
     if session.attack_proximity >= 0.85 and intent.intent_score >= 0.5:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "proximity+intent")
+        return Decision(True, f"corroborated: attack proximity {session.attack_proximity:.2f} + intent {intent.intent_score:.2f}", round(risk, 4), "proximity+intent")
     # L1 caught an instruction-override pattern (incl. obfuscated forms) and
     # the semantic score is at least ambivalent — benign users don't leetspeak
     # "ignore prior constraints", so the pair is damning together.
     if sanitizer_hit and intent.intent_score >= 0.4:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sanitizer+intent")
+        return Decision(True, f"corroborated: sanitizer jailbreak pattern + intent {intent.intent_score:.2f}", round(risk, 4), "sanitizer+intent")
     # A smuggled base64 payload that DECODES to an instruction override is an
     # attack outright — no benign reason to encode "ignore all rules".
     if any(r.startswith("base64-payload") for r in sanitized.removed):
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "sanitizer")
+        return Decision(True, "base64-encoded instruction-override payload detected", round(risk, 4), "sanitizer")
     # SEMANTIC MEMORY: a near-duplicate (cosine >= threshold) of an attack we
     # already blocked. Repeat attacks are recognized on sight.
     if memory_similarity >= SETTINGS.memory_block_threshold:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "memory")
+        return Decision(True, f"semantic similarity {memory_similarity:.2f} matched a previously blocked attack", round(risk, 4), "memory")
 
     # L3 — multi-turn cumulative risk (the diagram's block reason verbatim).
     if session.blocked:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "behavioral")
+        return Decision(True, f"cumulative session risk {session.cumulative_risk:.2f} exceeded threshold", round(risk, 4), "behavioral")
 
     # L4 — poisoned context is dropped by the validator itself; only a fully
     # poisoned retrieval escalates to a block.
     if rag.risk >= 0.95:
-        return Decision(True, "cumulative risk exceeded", round(risk, 4), "rag")
+        return Decision(True, f"RAG context fully poisoned (risk {rag.risk:.2f})", round(risk, 4), "rag")
 
     # Policy guard: explicitly denied topics (optional, off by default).
     if SETTINGS.policy_enforce_denied_topics:
         from services import policy_engine
 
         if policy_engine.denied_topic_hits(sanitized.sanitized_prompt):
-            return Decision(True, "cumulative risk exceeded", round(risk, 4), "policy")
+            return Decision(True, "prompt matches a policy-denied topic", round(risk, 4), "policy")
 
     return Decision(False, "", round(risk, 4), "")

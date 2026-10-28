@@ -34,10 +34,7 @@ class MemoryRedis:
         return True
 
     def get(self, key: str):
-        self._sweep()
-        if key in self._ttl and self._ttl[key] and time.time() > self._ttl[key]:
-            self._store.pop(key, None)
-            return None
+        self._sweep()  # already removes all expired keys
         return self._store.get(key)
 
     def delete(self, key: str) -> int:

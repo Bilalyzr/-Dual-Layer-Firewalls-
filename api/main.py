@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -73,7 +75,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=SETTINGS.api_title, version="2.0.0", lifespan=lifespan)
+
+# Explicit allowlist instead of wildcard — admin/session endpoints must not be
+# reachable cross-origin from arbitrary pages (M4 fix).
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+] or [
+    "http://localhost:4001",   # proxy dev
+    "http://localhost:5174",   # Vite dashboard dev
+    "http://localhost:8080",   # Docker dashboard
+    "http://localhost:3000",   # misc dev
+]
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    allow_credentials=True,
 )
 app.include_router(router)

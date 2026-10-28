@@ -209,7 +209,10 @@ def execute_firewall_pipeline(req: ChatCompletionRequest,
         pass
 
     if dec.blocked:
-        behavioral.reset(user_id)          # PDF §3.3: terminate + reset session
+        # behavioral.track() already resets on cumulative blocks (session.blocked=True).
+        # Only reset here for non-behavioral block layers to avoid a redundant DEL (L1 fix).
+        if dec.layer != "behavioral":
+            behavioral.reset(user_id)
         metrics.inc_layer_block(dec.layer)
         # Semantic memory: remember this attack (deduped) for future recall,
         # and register a long-term user strike (repeat offenders get banned).

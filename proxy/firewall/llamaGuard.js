@@ -66,9 +66,8 @@ export function parseVerdict(text) {
 /** Map parsed category codes to OWASP tags for the dashboard threat feed. */
 export function toOwasp(categories) {
   return categories
-    .map((c) => LLAMAGUARD_CATEGORIES[c])
-    .filter(Boolean)
-    .map((m, i) => ({ code: categories[i], name: m.name, owasp: m.owasp }));
+    .map((c) => ({ code: c, ...(LLAMAGUARD_CATEGORIES[c] || {}) }))
+    .filter((m) => m.name);
 }
 
 /**

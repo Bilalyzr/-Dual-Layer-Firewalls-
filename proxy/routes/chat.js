@@ -735,10 +735,6 @@ router.post("/", async (req, res) => {
     category,
   };
 
-  // Real-time learning: allowed traffic is the benign class (with risk so
-  // the training store can refuse near-miss "benign" pushes).
-  reportRealtimeSample(prompt, 0, threatProb);
-
   // ---- Decision: shadow logs but does not block. ----
   let willBlock = isThreat && MODE === "enforce";
   let weightageBlock = null;
@@ -798,6 +794,7 @@ router.post("/", async (req, res) => {
       totalLatencyMs: +(performance.now() - t0).toFixed(2),
     });
     reportInjectionBehavior({ userId, sessionId, prompt, wordScores: weightageBlock.ws, clientIp: forensics?.clientIp });
+    reportRealtimeSample(prompt, 1);
     return res.json({
       blocked: true,
       reason: "blocked by AI firewall",
@@ -816,11 +813,13 @@ router.post("/", async (req, res) => {
     });
   }
 
+  // Hoisted so the block-reason is visible in the willBlock path below (M1 fix).
+  let label = "";
   if (isThreat) {
     const guardLabel = guardInput.degraded
       ? "Llama Guard endpoint degraded (fail-closed)"
       : `Llama Guard flagged unsafe content [${guardInput.categories.join(",")}]`;
-    const label =
+    label =
       heuristic.signals[0]?.label ||
       (mlThreat ? `ML-classified prompt injection (p=${threatProb.toFixed(2)})` : null) ||
       (guardThreat ? guardLabel : `prompt injection (p=${threatProb.toFixed(2)})`);
@@ -898,6 +897,13 @@ router.post("/", async (req, res) => {
       verdict,
       latencyMs: +(performance.now() - t0).toFixed(2),
     });
+  }
+
+  // Real-time learning: only genuinely allowed prompts are labelled benign.
+  // All block paths have already returned (or called reportRealtimeSample(1))
+  // so we reach here only when isThreat=false (H1 fix).
+  if (!isThreat) {
+    reportRealtimeSample(prompt, 0, threatProb);
   }
 
   // Evaluate and broadcast all 6 security module scores IMMEDIATELY before

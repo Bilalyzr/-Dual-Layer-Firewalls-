@@ -472,7 +472,7 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
         from sklearn.model_selection import train_test_split
 
         from engine.classifier.ensemble import (
-            ENSEMBLE_PATH, MODEL_DIR, VECT_PATH, build_estimators, ensemble_ready,
+            CALIB_PATH, ENSEMBLE_PATH, MODEL_DIR, VECT_PATH, build_estimators, ensemble_ready,
         )
 
         # Hybrid corpus: live traffic keeps it current, the curated seed keeps
@@ -545,8 +545,16 @@ def _retrain_fast_tier(texts: list[str], y) -> dict:
             try:
                 inc_vec = joblib.load(VECT_PATH)
                 inc_ests = joblib.load(ENSEMBLE_PATH)
+                inc_scores = _soft_vote(inc_vec, inc_ests, Xte, threat_class=0)
+                # Apply the incumbent's saved calibrator so the promotion gate
+                # compares challenger and incumbent on equal footing — both
+                # calibrated, both thresholded at 0.5 (M3 fix).
+                if CALIB_PATH.exists():
+                    import numpy as _np
+                    inc_calib = joblib.load(CALIB_PATH)
+                    inc_scores = _np.clip(inc_calib.predict(inc_scores), 0.0, 1.0)
                 incumbent_f1 = f1_score(
-                    yte_cmp, (_soft_vote(inc_vec, inc_ests, Xte, threat_class=0) >= 0.5).astype(int),
+                    yte_cmp, (inc_scores >= 0.5).astype(int),
                     average="macro")
             except Exception:
                 incumbent_f1 = None

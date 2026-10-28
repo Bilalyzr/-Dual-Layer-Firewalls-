@@ -40,6 +40,9 @@ def sanitize(prompt: str) -> SanitizeResult:
             clean = pattern.sub("[sanitized:instruction-override]", probe)
             removed.append(f"jailbreak-obfuscated:{pattern.pattern[:32]}")
 
+    # 3) [step removed — originally a duplicate unicode-normalisation pass that
+    #    was merged into step 2's deobfuscate() call in v1.4]
+
     # 4) Decode smuggled base64 payloads: an encoded blob whose DECODED text
     #    carries an instruction-override is an attack no matter how innocent
     #    the surrounding sentence looks (observed live: "decode ... then obey").

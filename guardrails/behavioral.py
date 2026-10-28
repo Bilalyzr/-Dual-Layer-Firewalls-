@@ -27,6 +27,22 @@ from models.schemas import SessionRiskResult
 from services import redis_client
 from services.embedding_service import cosine
 
+# Lua script for atomic EWMA update — prevents concurrent requests from racing
+# on the same session state and keeping cumulative risk permanently below the
+# escalation threshold (M2 fix: read-modify-write must be atomic on Redis).
+_EWMA_LUA = """\
+local raw = redis.call('GET', KEYS[1])
+local prev = (raw ~= false) and cjson.decode(raw) or {cumulative=0,count=0}
+local decay = tonumber(ARGV[1])
+local per_turn = tonumber(ARGV[2])
+local new_cum = decay * (tonumber(prev['cumulative']) or 0) + (1.0 - decay) * per_turn
+local new_cnt = (tonumber(prev['count']) or 0) + 1
+prev['cumulative'] = new_cum
+prev['count']      = new_cnt
+redis.call('SET', KEYS[1], cjson.encode(prev), 'EX', tonumber(ARGV[3]))
+return tostring(new_cum)
+"""
+
 
 def _key(user_id: str) -> str:
     return f"session_risk:{user_id}"
@@ -112,8 +128,27 @@ def track(user_id: str, embedding: list[float] | None, intent_score: float,
         drift_risk * 0.8,
         injection_weightage,   # trial-update #3: saturated attack vocab = full-risk turn
     )
-    cumulative = SETTINGS.risk_decay * float(prev.get("cumulative", 0.0)) \
-        + (1.0 - SETTINGS.risk_decay) * per_turn
+    # Atomic EWMA: use a Lua script on real Redis so concurrent requests from
+    # the same session cannot race and stall cumulative risk escalation (M2).
+    # Falls back to local arithmetic for the in-memory stub (single-process).
+    _r = redis_client.get_redis()
+    if _r is not None:
+        try:
+            _result = _r.eval(_EWMA_LUA, 1, _key(user_id),
+                              str(SETTINGS.risk_decay), str(per_turn),
+                              str(SETTINGS.session_risk_ttl_s))
+            cumulative = float(_result if isinstance(_result, (int, float))
+                               else (_result.decode() if isinstance(_result, bytes)
+                                     else _result))
+            # Re-read for history/sentinel fields (non-critical; drift already
+            # computed above from the pre-update snapshot).
+            prev = _load_state(user_id)
+        except Exception:
+            cumulative = (SETTINGS.risk_decay * float(prev.get("cumulative", 0.0))
+                          + (1.0 - SETTINGS.risk_decay) * per_turn)
+    else:
+        cumulative = (SETTINGS.risk_decay * float(prev.get("cumulative", 0.0))
+                      + (1.0 - SETTINGS.risk_decay) * per_turn)
 
     # --- aggregate average sentiment across the session (trial-update #2) -- #
     sentiment_history.append(round(float(injection_weightage), 4))

@@ -123,7 +123,7 @@ def realtime_sample(req: RealtimeSampleRequest):
             conflict = _classify(text).intent_score >= 0.7
         except Exception:
             pass
-        if req.risk >= 0.5 or conflict:
+        if req.risk >= 0.25 or conflict:  # 0.25 = gray-zone floor (M5 fix)
             audit_log.record_vulnerability(
                 prompt_text=text, layer="label-conflict" if conflict else "proxy-nearmiss",
                 risk=max(req.risk, 0.7 if conflict else req.risk), source="sampling")
