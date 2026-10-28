@@ -8,7 +8,7 @@
  * 3. /api/behavior/* (events with prompt snippets, /recalculate state
  *    mutations) answered anonymous requests.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import http from "node:http";
@@ -51,6 +51,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise((r) => engineStub.close(r));
+});
+
+// Enforcement tests promote `demo` to a real (configured) account by setting
+// DEMO_PASSWORD, which makes isDemoAccount() return false. Clear it after each
+// test so the demo-bypass tests see the built-in demo account again.
+afterEach(() => {
+  delete process.env.DEMO_PASSWORD;
 });
 
 async function buildApp() {
@@ -109,7 +116,8 @@ describe("login trust boundary", () => {
 });
 
 describe("login risk enforcement", () => {
-  it("freezes MEDIUM-risk logins behind step-up (chat returns 401)", async () => {
+  it("reports MEDIUM risk as stepUpRequired without freezing the session (enforcement opt-in)", async () => {
+    process.env.DEMO_PASSWORD = "demo"; // treat `demo` as a real, enforced account
     const app = await buildApp();
     stubMode = "medium";
     const chatRouter = (await import("../routes/chat.js")).default;
@@ -117,16 +125,18 @@ describe("login risk enforcement", () => {
 
     const r = await request(app).post("/api/auth/login").send({ username: "demo", password: "demo" });
     expect(r.status).toBe(200);
-    expect(r.body.stepUpRequired).toBe(true);
+    expect(r.body.stepUpRequired).toBe(true); // verdict reported…
 
+    // …but the session is NOT frozen: chat must not return the step-up 401.
     const chat = await request(app)
       .post("/api/chat")
       .set("Authorization", `Bearer ${r.body.token}`)
       .send({ prompt: "hello" });
-    expect(chat.status).toBe(401); // frozen until a WebAuthn assertion clears step-up
+    expect(chat.status === 401 ? chat.body.reason : "ok").not.toBe("step_up_required");
   });
 
   it("degrades to a step-up-gated login (never LOW/ALLOW) when the engine errors", async () => {
+    process.env.DEMO_PASSWORD = "demo"; // treat `demo` as a real, enforced account
     const app = await buildApp();
     stubMode = "error";
     const r = await request(app).post("/api/auth/login").send({ username: "demo", password: "demo" });
@@ -137,11 +147,35 @@ describe("login risk enforcement", () => {
   });
 
   it("refuses HIGH-risk logins (score >= 80)", async () => {
+    process.env.DEMO_PASSWORD = "demo"; // treat `demo` as a real, enforced account
     const app = await buildApp();
     stubMode = "high";
     const r = await request(app).post("/api/auth/login").send({ username: "demo", password: "demo" });
     expect(r.status).toBe(403);
     expect(r.body.behavioral.risk_level).toBe("HIGH");
+  });
+
+  it("lets the built-in demo accounts in regardless of the behavioral verdict", async () => {
+    const chatRouter = (await import("../routes/chat.js")).default;
+
+    // HIGH would 403 a real account; a demo account (bundled password) is not denied.
+    for (const stub of ["high", "medium", "error"]) {
+      const app = await buildApp();
+      app.use("/api/chat", chatRouter);
+      stubMode = stub;
+      const r = await request(app).post("/api/auth/login").send({ username: "demo", password: "demo" });
+      expect(r.status).toBe(200);
+      expect(r.body.success).toBe(true);
+      expect(r.body.demoBypass).toBe(true);
+      expect(r.body.stepUpRequired).toBe(false); // never frozen behind step-up
+
+      // And the issued session can actually use the chat (not step-up-locked).
+      const chat = await request(app)
+        .post("/api/chat")
+        .set("Authorization", `Bearer ${r.body.token}`)
+        .send({ prompt: "hello" });
+      expect(chat.status === 401 ? chat.body.reason : "ok").not.toBe("step_up_required");
+    }
   });
 });
 

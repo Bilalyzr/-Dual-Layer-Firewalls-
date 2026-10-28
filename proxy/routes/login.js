@@ -2,10 +2,10 @@
  * /api/auth/login — Login system with behavioral risk analysis.
  *
  * Validates credentials, then runs the FULL behavioral risk pipeline on the
- * login attempt and ENFORCES the verdict:
+ * login attempt and acts on the verdict:
  *   - CRITICAL / HIGH (score >= 80) → login refused (403)
- *   - MEDIUM (or engine unavailable) → session issued but FROZEN behind
- *     WebAuthn step-up (requireStepUp) until an assertion clears it
+ *   - MEDIUM (or engine unavailable) → session issued with stepUpRequired
+ *     reported; WebAuthn freezing is OPT-IN via STEPUP_ENFORCE=1
  *   - LOW → normal login + session issued
  *
  * Trust boundary hardening: every risk-relevant telemetry field is derived
@@ -23,6 +23,9 @@ import { bumpFailedLogins, getLoginState, resetFailedLogins } from "../db/mongo.
 
 const router = Router();
 const ENGINE_URL = process.env.ENGINE_URL || "http://127.0.0.1:8011";
+
+// Opt-in step-up enforcement (see step 5 below).
+const STEPUP_ENFORCE = /^(1|true|yes)$/i.test(process.env.STEPUP_ENFORCE || "0");
 
 function safePasswordMatch(expected, provided) {
   if (typeof expected !== "string" || typeof provided !== "string") return false;
@@ -43,6 +46,24 @@ if (!process.env.ADMIN_PASSWORD || !process.env.ANALYST_PASSWORD || !process.env
     "[login] DEMO credentials active — set ADMIN_PASSWORD / ANALYST_PASSWORD / DEMO_PASSWORD " +
     "before any deployment beyond the local demo."
   );
+}
+
+// Which env var pins each built-in account's password. A built-in account is
+// treated as a "demo" account ONLY while it still uses its bundled password
+// (i.e. the env var is unset). The provided demo logins (admin / analyst /
+// demo) therefore always get into the app, instead of being frozen behind a
+// WebAuthn step-up the demo environment can't satisfy. The moment an operator
+// sets the matching *_PASSWORD env var, that account becomes a real account and
+// the full behavioral risk enforcement (step-up + hard-deny) applies again.
+// Read live (not at import) so tests and runtime config take effect per-request.
+const DEMO_ENV_VAR = {
+  admin: "ADMIN_PASSWORD",
+  analyst: "ANALYST_PASSWORD",
+  demo: "DEMO_PASSWORD",
+};
+function isDemoAccount(username) {
+  const envVar = DEMO_ENV_VAR[username];
+  return Boolean(envVar) && !process.env[envVar];
 }
 
 // Per-user session state (in-process; integrates with the existing session system in production).
@@ -76,6 +97,14 @@ router.post("/login", async (req, res) => {
       behavioral: { risk_level: "HIGH", decision: "DENY" },
     });
   }
+
+  // Built-in demo accounts (still on their bundled password) must always get
+  // into the app — they are the only way to use the demo. For them the
+  // behavioral verdict is still computed and surfaced for the dashboard, but it
+  // is NOT enforced: no 403 hard-deny and no WebAuthn step-up freeze. Any
+  // account whose *_PASSWORD env var is set is a real account and keeps full
+  // enforcement.
+  const demoBypass = isDemoAccount(username.toLowerCase());
 
   // 2. Build behavioral telemetry from SERVER-DERIVED context only.
   //    Risk-relevant fields the client used to control are pinned: without a
@@ -143,8 +172,9 @@ router.post("/login", async (req, res) => {
   publish("behavior", { ...behavioral, event_type: "login", user_id: username, ts: new Date() });
 
   // Hard-deny CRITICAL, and HIGH at score >= 80: a genuinely hostile context
-  // (new device + new location + off hours + failed auths) still blocks.
-  const hardDeny = ["HIGH", "CRITICAL"].includes(behavioral.risk_level) && (behavioral.risk_score ?? 100) >= 80;
+  // (new device + new location + off hours + failed auths) still blocks —
+  // except for the built-in demo accounts, which are never hard-denied.
+  const hardDeny = !demoBypass && ["HIGH", "CRITICAL"].includes(behavioral.risk_level) && (behavioral.risk_score ?? 100) >= 80;
   if (hardDeny) {
     appendAudit("login_blocked", { username, ip: clientIp, risk: behavioral.risk_score, reasons: behavioral.reasons, ts: new Date() });
     return res.status(403).json({
@@ -155,13 +185,15 @@ router.post("/login", async (req, res) => {
     });
   }
 
-  // 5. Issue session. MEDIUM (or degraded) risk → the session is created but
-  //    FROZEN behind WebAuthn step-up: /api/chat returns 401 until a verified
-  //    assertion clears it (see routes/auth.js verify endpoint).
-  const stepUpRequired = behavioral.risk_level === "MEDIUM" || behavioral.degraded === true;
+  // 5. Issue session. MEDIUM (or degraded) risk → the session would be
+  //    frozen behind WebAuthn step-up. Enforcement is OPT-IN (STEPUP_ENFORCE=1):
+  //    the demo flow must never hard-block on passkey hardware, so by default
+  //    the verdict is reported (stepUpRequired) but the session is issued
+  //    unfrozen — the WebAuthn register/verify endpoints remain available.
+  const stepUpRequired = !demoBypass && (behavioral.risk_level === "MEDIUM" || behavioral.degraded === true);
   const signedSession = await createSession({ userId: username });
   const token = signedSession.token;
-  if (stepUpRequired) {
+  if (stepUpRequired && STEPUP_ENFORCE) {
     await requireStepUp(signedSession.sessionId, "login risk MEDIUM — WebAuthn step-up required");
     appendAudit("login_stepup_required", { username, ip: clientIp, risk: behavioral.risk_score, degraded: Boolean(behavioral.degraded), ts: new Date() });
   }
@@ -174,6 +206,7 @@ router.post("/login", async (req, res) => {
     token,
     sessionId: signedSession.sessionId,
     stepUpRequired,
+    demoBypass,
     user: { username, role: user.role, privilege_level: user.privilege_level },
     behavioral,
   });
