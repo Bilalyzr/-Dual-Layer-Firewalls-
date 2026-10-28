@@ -5,7 +5,6 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
-import StepUpModal from "./StepUpModal";
 import { IconAlert, IconShieldCheck, MSG_ICONS } from "./Icons";
 
 const LLM_LABELS = {
@@ -60,8 +59,6 @@ export default function ChatPanel({ userId, onModuleAnalysis = null }) {
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(0);
-  const [stepUp, setStepUp] = useState(false);
-  const [pendingPrompt, setPendingPrompt] = useState(null);
   const [inFlightPrompt, setInFlightPrompt] = useState("");
   const logRef = useRef(null);
 
@@ -88,7 +85,7 @@ export default function ChatPanel({ userId, onModuleAnalysis = null }) {
     if (!text || busy) return;
     setBusy(true);
     setInFlightPrompt(text.slice(0, 180));
-    if (!_isRetry && text !== pendingPrompt) setMessages((m) => [...m, { role: "user", text }]);
+    if (!_isRetry) setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
     let scheduleRetry = false;
     try {
@@ -101,18 +98,14 @@ export default function ChatPanel({ userId, onModuleAnalysis = null }) {
         },
         userId
       );
-      // EPIC B: session frozen until a WebAuthn assertion clears step-up.
+      // A 401 means the session is no longer valid — surface a plain re-login
+      // hint (the old passkey step-up flow has been removed).
       if (res.status === 401) {
-        const body = await res.json().catch(() => ({}));
-        if (body.reason === "step_up_required") {
-          setPendingPrompt(text);
-          setStepUp(true);
-          setMessages((m) => [
-            ...m,
-            { role: "system", text: "Step-up authentication required — verify your passkey to continue.", icon: "lock", blocked: true },
-          ]);
-          return;
-        }
+        setMessages((m) => [
+          ...m,
+          { role: "system", text: "Your session has expired — please log out and log back in to continue.", icon: "alert" },
+        ]);
+        return;
       }
       // Guard: empty / non-JSON / non-OK responses (timeout, proxy drop, 500)
       // previously surfaced as "Unexpected end of JSON input". Handle cleanly.
@@ -216,23 +209,8 @@ export default function ChatPanel({ userId, onModuleAnalysis = null }) {
     }
   };
 
-  // After a verified step-up assertion, close the modal and retry the prompt
-  // that was frozen.
-  const onStepUpVerified = () => {
-    setStepUp(false);
-    const retry = pendingPrompt;
-    setPendingPrompt(null);
-    setMessages((m) => [...m, { role: "system", text: "Identity re-verified — resuming.", icon: "check" }]);
-    if (retry) send(retry);
-  };
-
   return (
     <section className="panel chat-panel p-chat">
-      <StepUpModal
-        open={stepUp}
-        onVerified={onStepUpVerified}
-        onCancel={() => setStepUp(false)}
-      />
       <div className="panel-head">
         <h2>LLM Chat <small>behind AI Firewall</small></h2>
         <span className="pill pill-ok">Protected</span>
