@@ -83,6 +83,7 @@ _cors_origins = [
     for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
     if o.strip()
 ] or [
+    "https://dual-layer-firewalls.vercel.app",  # production frontend
     "http://localhost:4001",   # proxy dev
     "http://localhost:5174",   # Vite dashboard dev
     "http://localhost:8080",   # Docker dashboard
