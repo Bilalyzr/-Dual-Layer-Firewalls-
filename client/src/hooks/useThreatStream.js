@@ -109,10 +109,14 @@ function ensureSharedStream() {
   es.addEventListener("module_analysis", (e) => {
     try {
       const { payload } = JSON.parse(e.data);
+      // Tag LIVE arrivals: the panel must only score prompts from THIS page
+      // load — the hydrated global history (other clients / test traffic)
+      // must not appear as an instant "live session score" on open.
+      const entry = { ...payload, liveSSE: true };
       const filtered = shared.moduleAnalyses.filter(
-        (m) => !(m.ts === payload?.ts && m.prompt === payload?.prompt)
+        (m) => !(m.ts === entry.ts && m.prompt === entry.prompt)
       );
-      shared.moduleAnalyses = [payload, ...filtered].slice(0, MAX_STORE);
+      shared.moduleAnalyses = [entry, ...filtered].slice(0, MAX_STORE);
       notify();
     } catch {}
   });

@@ -37,8 +37,10 @@ export default function App() {
 
   // ALL hooks must be called BEFORE any early return (React rules of hooks).
   const [booting, setBooting] = useState(true);
-  const { moduleAnalyses } = useThreatStream(30);
-  const liveLatestScores = moduleAnalyses[0] || latestModuleScores || null;
+  useThreatStream(30);
+  // Only THIS session's own chats (ChatPanel callback) seed the panel —
+  // never the hydrated global history.
+  const liveLatestScores = latestModuleScores || null;
 
   useEffect(() => {
     if (!authUser) return;

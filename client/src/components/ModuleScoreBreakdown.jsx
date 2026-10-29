@@ -164,8 +164,12 @@ export default function ModuleAnalysisPanel({ latestFromChat = null }) {
   const { moduleAnalyses, connected } = useThreatStream(30);
   const [selectedIdx, setSelectedIdx] = useState(0);
 
-  // Merge SSE stream with any direct chat callback so it works immediately
-  const history = [...moduleAnalyses];
+  // Merge SSE stream with any direct chat callback so it works immediately.
+  // Only LIVE (this page load) entries score the panel: hydrated global
+  // history belongs to the threat feed, not the per-session breakdown —
+  // opening the dashboard must show the empty state, not someone else's
+  // last evaluation.
+  const history = moduleAnalyses.filter((m) => m.liveSSE);
   if (
     latestFromChat &&
     !history.some((h) => h.ts === latestFromChat.ts && h.prompt === latestFromChat.prompt)
