@@ -16,6 +16,8 @@ import Logo from "./Logo.jsx";
 const DEMO_ACCOUNTS = [
   { label: "admin", password: "admin123", hint: "full console" },
   { label: "analyst", password: "sec123", hint: "operator" },
+  { label: "secops", password: "secops123", hint: "SOC lead" },
+  { label: "auditor", password: "auditor123", hint: "read-only" },
   { label: "demo", password: "demo", hint: "viewer" },
 ];
 

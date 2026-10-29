@@ -40,6 +40,8 @@ const USERS = {
   admin: { password: process.env.ADMIN_PASSWORD || "admin123", role: "admin", privilege_level: 0.9, normal_hours: [9, 18] },
   analyst: { password: process.env.ANALYST_PASSWORD || "sec123", role: "user", privilege_level: 0.4, normal_hours: [9, 18] },
   demo: { password: process.env.DEMO_PASSWORD || "demo", role: "user", privilege_level: 0.2, normal_hours: [9, 18] },
+  secops: { password: process.env.SECOPS_PASSWORD || "secops123", role: "admin", privilege_level: 0.7, normal_hours: [9, 18] },
+  auditor: { password: process.env.AUDITOR_PASSWORD || "auditor123", role: "user", privilege_level: 0.3, normal_hours: [9, 18] },
 };
 if (!process.env.ADMIN_PASSWORD || !process.env.ANALYST_PASSWORD || !process.env.DEMO_PASSWORD) {
   console.warn(
@@ -60,6 +62,8 @@ const DEMO_ENV_VAR = {
   admin: "ADMIN_PASSWORD",
   analyst: "ANALYST_PASSWORD",
   demo: "DEMO_PASSWORD",
+  secops: "SECOPS_PASSWORD",
+  auditor: "AUDITOR_PASSWORD",
 };
 function isDemoAccount(username) {
   const envVar = DEMO_ENV_VAR[username];
