@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://christine-consumer-idea-jews.trycloudflare.com/api/:path*"
+      "destination": "https://eligibility-landscapes-newer-endif.trycloudflare.com/api/:path*"
     }
   ]
 }
